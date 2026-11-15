@@ -1,0 +1,13 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.tvaitranslator'
+    compileSdk 33
+    defaultConfig {
+        applicationId 'com.tvaitranslator'
+        minSdk 24
+        targetSdk 28
+        versionCode 1
+        versionName '0.1.0'
+    }
+}
