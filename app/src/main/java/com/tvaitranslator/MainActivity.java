@@ -27,12 +27,12 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        prefs=getSharedPreferences("subtitle_profiles",MODE_PRIVATE);
+        prefs=getSharedPreferences("subtitle_profiles",MODE_PRIVATE);\n        startService(new Intent(this, ControlServerService.class));
         ScrollView scroll=new ScrollView(this);
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(22,18,22,24); root.setBackgroundColor(Color.rgb(18,22,30)); scroll.addView(root);
         root.addView(label("مترجم التلفزيون",25,Color.WHITE));
-        root.addView(label("ابحث عن ترجمة عربية للفيلم أو المسلسل وشغّلها فوق DVB Player",15,Color.LTGRAY));
+        root.addView(label("ابحث عن ترجمة عربية للفيلم أو المسلسل وشغّلها فوق DVB Player",15,Color.LTGRAY));\n        root.addView(label("لوحة التحكم من الموبايل: http://IP-الجهاز:3434 (نفس شبكة Wi-Fi)",14,Color.YELLOW));
 
         titleInput=edit("اكتب اسم الفيلم أو المسلسل"); root.addView(titleInput);
         keyInput=edit("مفتاح SubDL API"); keyInput.setInputType( android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
