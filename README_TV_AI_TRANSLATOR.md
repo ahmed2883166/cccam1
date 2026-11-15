@@ -1,30 +1,20 @@
-# TV AI Translator
+# مترجم التلفزيون
 
-Android 7+ prototype for Arabic live captions over a TV player, plus SRT subtitles.
+تطبيق Android 7+ للبحث عن ترجمة عربية جاهزة للأفلام والمسلسلات وعرض ملف SRT فوق مشغل DVB.
 
-## Live AI translation now included in source
-- Android SpeechRecognizer continuously listens through the device microphone.
-- ML Kit Language Identification detects the language of recognized text.
-- ML Kit Translation downloads the required language model and translates recognized text to Arabic on-device after the model is downloaded.
-- Live translated text is sent to the floating subtitle overlay.
-- The live recognition service uses a foreground notification while listening.
-- The spoken language hint can be changed in the app (BCP-47 examples: en-US, fr-FR, de-DE).
+## المسار الحالي
+- إدخال اسم الفيلم أو المسلسل يدويًا والبحث في SubDL API عن الترجمات العربية.
+- يحتاج البحث إلى API key مجاني من حساب SubDL؛ أدخله داخل التطبيق ولا تضعه في ملفات المشروع أو GitHub.
+- يعرض نتائج ملفات الترجمة المتاحة، ثم ينزّل ملف SRT المختار ويشغّله كطبقة عائمة.
+- اختيار ملف SRT محليًا ما زال متاحًا.
+- تقديم/تأخير يدوي من -10 إلى +10 دقائق، مع حفظ الإزاحة لكل اسم ملف/قناة.
+- لا يستخدم الميكروفون أو SpeechRecognizer أو ترجمة الصوت.
 
-## Existing subtitle features
-- Select an SRT subtitle file through Android's document picker.
-- Parse SRT time ranges and display the current cue in a system overlay.
-- Request the Android Display over other apps permission when needed.
-- Manual subtitle offset from -10 to +10 minutes; positive delays subtitles and negative advances them.
-- Save offsets by the channel/movie profile name; reset to zero and stop the overlay.
+## التعرف التلقائي على اسم البرنامج
+لم يتم إثبات وجود واجهة عامة في DVB Player package `com.amlogic.dvbplayer` لاستخراج اسم العمل أو EPG. لذلك البحث اليدوي هو المسار الاحتياطي المتاح حاليًا. سيتم إضافة قراءة EPG أو OCR بعد التحقق من طريقة عرض معلومات زر INFO وإمكانية وصول التطبيق إليها على DreamMax B9S2X. لا نعد بأن OCR يعمل قبل اختباره على الجهاز.
 
-## Important hardware and platform limits
-- **This build listens through the Android device microphone.** It does not capture the DVB player's internal audio stream. If the DreamMax box has no built-in microphone, a compatible USB microphone or another supported audio input is required. The TV speaker must be audible to that microphone.
-- Android 7.1.1 has no standard Android playback-capture API for recording another app's audio. True direct DVB audio capture requires a device/ROM-specific audio loopback or DVB player integration; neither has been verified.
-- Speech recognition depends on an installed Android recognition provider and may use network services. It is not guaranteed to work offline.
-- ML Kit translation models are downloaded when first needed. Internet is required for the initial model download; translation can then run on-device for supported languages.
-- The speech locale is a recognition hint. Language identification is applied to the recognized text, but recognition quality still depends on the selected speech locale and installed recognizer.
-- Captions are speech-segment based, not synchronized to the DVB playback clock. Pause, seek, channel changes, and exact subtitle timing are not automatically detected.
-- The overlay and microphone pipeline have not yet been verified on the DreamMax B9S2X.
+## حدود المزامنة
+مؤقت SRT يبدأ عند تشغيل الملف داخل التطبيق؛ لا يقرأ ساعة تشغيل DVB ولا يتزامن تلقائيًا مع الإيقاف/التقديم/تغيير القناة. شريط التقديم والتأخير يدوي.
 
-## Build
-GitHub Actions uses Gradle 7.5 and Java 11 to run gradle assembleDebug. This repository currently uses the installed Gradle distribution in Actions; it does not include the Gradle wrapper. Treat the APK as built only after a successful Actions run and artifact upload.
+## البناء
+GitHub Actions يستخدم Gradle 7.5 وJava 11 لتنفيذ assembleDebug. لا تعتبر APK جاهزًا إلا بعد نجاح Actions ورفع artifact بنجاح، ثم اختباره على الجهاز.
