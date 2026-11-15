@@ -1,7 +1,9 @@
 package com.tvaitranslator;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -20,12 +22,14 @@ import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static final int PICK_SRT = 41;
+    private static final int REQUEST_AUDIO = 42;
     private static final int MAX_OFFSET_MS = 600000;
     private SharedPreferences prefs;
     private TextView offsetLabel, fileLabel;
     private SeekBar offsetSlider;
-    private EditText profileInput;
+    private EditText profileInput, languageInput;
     private Uri selectedSrt;
+    private boolean startAiAfterPermission = false;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -37,14 +41,37 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.rgb(18, 22, 30));
 
         root.addView(text("TV AI Translator", 25, Color.WHITE));
-        root.addView(text("ترجمة ملفات SRT فوق مشغل القنوات", 17, Color.LTGRAY));
+        root.addView(text("ترجمة ذكية مباشرة من صوت التلفزيون إلى العربية", 17, Color.LTGRAY));
 
         profileInput = new EditText(this);
         profileInput.setSingleLine(true);
         profileInput.setTextColor(Color.WHITE);
         profileInput.setHintTextColor(Color.GRAY);
-        profileInput.setHint("اكتب اسم القناة أو الفيلم");
+        profileInput.setHint("اسم القناة أو الفيلم لحفظ الإعدادات");
         root.addView(profileInput);
+
+        root.addView(text("لغة الحوار المسموعة (مثال: en-US أو fr-FR)", 14, Color.LTGRAY));
+        languageInput = new EditText(this);
+        languageInput.setSingleLine(true);
+        languageInput.setText("en-US");
+        languageInput.setTextColor(Color.WHITE);
+        languageInput.setHintTextColor(Color.GRAY);
+        root.addView(languageInput);
+
+        Button startAi = new Button(this);
+        startAi.setText("بدء الترجمة الذكية الحية");
+        startAi.setOnClickListener(v -> requestAndStartAi());
+        root.addView(startAi);
+
+        Button stopAi = new Button(this);
+        stopAi.setText("إيقاف الاستماع والترجمة الذكية");
+        stopAi.setOnClickListener(v -> {
+            stopService(new Intent(this, LiveAiService.class));
+            Toast.makeText(this, "تم إيقاف خدمة الترجمة الذكية", Toast.LENGTH_SHORT).show();
+        });
+        root.addView(stopAi);
+
+        root.addView(text("يمكن للميكروفون سماع صوت التلفزيون من السماعة. لا يلتقط صوت DVB الداخلي مباشرة على Android 7.", 13, Color.YELLOW));
 
         offsetLabel = text("التوقيت: 0.0 ثانية", 19, Color.WHITE);
         root.addView(offsetLabel);
@@ -71,6 +98,7 @@ public class MainActivity extends Activity {
             Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             pick.addCategory(Intent.CATEGORY_OPENABLE);
             pick.setType("*/*");
+            pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
             startActivityForResult(pick, PICK_SRT);
         });
         root.addView(choose);
@@ -79,12 +107,12 @@ public class MainActivity extends Activity {
         root.addView(fileLabel);
 
         Button show = new Button(this);
-        show.setText("تشغيل الترجمة فوق المشغل");
+        show.setText("تشغيل ملف الترجمة فوق المشغل");
         show.setOnClickListener(v -> startOverlay());
         root.addView(show);
 
         Button stop = new Button(this);
-        stop.setText("إيقاف الترجمة");
+        stop.setText("إيقاف الترجمة العائمة");
         stop.setOnClickListener(v -> stopService(new Intent(this, SubtitleOverlayService.class)));
         root.addView(stop);
 
@@ -101,6 +129,43 @@ public class MainActivity extends Activity {
         setContentView(root);
         profileInput.setText("عام");
         loadProfile();
+    }
+
+    private void requestAndStartAi() {
+        if (!Settings.canDrawOverlays(this)) {
+            Intent permission = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
+            startActivity(permission);
+            Toast.makeText(this, "اسمح بالظهور فوق التطبيقات ثم اضغط بدء الترجمة الذكية", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            startAiAfterPermission = true;
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_AUDIO);
+            return;
+        }
+        startAi();
+    }
+
+    private void startAi() {
+        if (!android.speech.SpeechRecognizer.isRecognitionAvailable(this)) {
+            Toast.makeText(this, "خدمة التعرف على الكلام غير متاحة. يلزم تثبيت خدمة Google Speech Recognition متوافقة.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        String locale = languageInput.getText().toString().trim();
+        if (locale.isEmpty()) locale = Locale.getDefault().toLanguageTag();
+        Intent service = new Intent(this, LiveAiService.class);
+        service.putExtra(LiveAiService.EXTRA_SPEECH_LOCALE, locale);
+        startService(service);
+        Toast.makeText(this, "بدأ الاستماع. اجعل صوت التلفزيون مسموعًا قرب الجهاز.", Toast.LENGTH_LONG).show();
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == REQUEST_AUDIO) {
+            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED && startAiAfterPermission) startAi();
+            else Toast.makeText(this, "يلزم السماح باستخدام الميكروفون", Toast.LENGTH_LONG).show();
+            startAiAfterPermission = false;
+        }
     }
 
     private void startOverlay() {
@@ -126,7 +191,9 @@ public class MainActivity extends Activity {
         if (requestCode == PICK_SRT && resultCode == RESULT_OK && data != null) {
             selectedSrt = data.getData();
             if (selectedSrt != null) {
-                getContentResolver().takePersistableUriPermission(selectedSrt, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                try {
+                    getContentResolver().takePersistableUriPermission(selectedSrt, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (SecurityException ignored) { }
                 fileLabel.setText("ملف الترجمة: " + selectedSrt.getLastPathSegment());
             }
         }
