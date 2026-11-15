@@ -25,9 +25,6 @@ import java.util.regex.Pattern;
 public class SubtitleOverlayService extends Service {
     public static final String ACTION_START = "com.tvaitranslator.START";
     public static final String ACTION_OFFSET = "com.tvaitranslator.OFFSET";
-    public static final String ACTION_LIVE = "com.tvaitranslator.LIVE";
-    public static final String ACTION_TEXT = "com.tvaitranslator.TEXT";
-    public static final String EXTRA_TEXT = "text";
     public static final String EXTRA_OFFSET = "offset";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<Cue> cues = new ArrayList<>();
@@ -59,19 +56,6 @@ public class SubtitleOverlayService extends Service {
         if (intent == null) return START_NOT_STICKY;
         if (ACTION_OFFSET.equals(intent.getAction())) {
             offsetMs = intent.getIntExtra(EXTRA_OFFSET, 0);
-            return START_NOT_STICKY;
-        }
-        if (ACTION_LIVE.equals(intent.getAction())) {
-            handler.removeCallbacks(ticker);
-            attachOverlay();
-            subtitleView.setText("استمع الآن... جاري تجهيز الترجمة الذكية");
-            return START_NOT_STICKY;
-        }
-        if (ACTION_TEXT.equals(intent.getAction())) {
-            handler.removeCallbacks(ticker);
-            attachOverlay();
-            String value = intent.getStringExtra(EXTRA_TEXT);
-            subtitleView.setText(value == null ? "" : value);
             return START_NOT_STICKY;
         }
         if (ACTION_START.equals(intent.getAction())) {
