@@ -27,12 +27,14 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        prefs=getSharedPreferences("subtitle_profiles",MODE_PRIVATE);\n        startService(new Intent(this, ControlServerService.class));
+        prefs=getSharedPreferences("subtitle_profiles",MODE_PRIVATE);
+        startService(new Intent(this, ControlServerService.class));
         ScrollView scroll=new ScrollView(this);
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(22,18,22,24); root.setBackgroundColor(Color.rgb(18,22,30)); scroll.addView(root);
         root.addView(label("مترجم التلفزيون",25,Color.WHITE));
-        root.addView(label("ابحث عن ترجمة عربية للفيلم أو المسلسل وشغّلها فوق DVB Player",15,Color.LTGRAY));\n        root.addView(label("افتح من الموبايل على نفس Wi-Fi: http://"+getDeviceIp()+":3434",14,Color.YELLOW));
+        root.addView(label("ابحث عن ترجمة عربية للفيلم أو المسلسل وشغّلها فوق DVB Player",15,Color.LTGRAY));
+        root.addView(label("افتح من الموبايل على نفس Wi-Fi: http://"+getDeviceIp()+":3434",14,Color.YELLOW));
 
         titleInput=edit("اكتب اسم الفيلم أو المسلسل"); root.addView(titleInput);
         keyInput=edit("مفتاح SubDL API"); keyInput.setInputType( android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -99,7 +101,8 @@ public class MainActivity extends Activity {
         if(f==null)return;
         String name=f.optString("name","subtitle.srt"),release=f.optString("release_name",parent);
         String lang=f.optString("language","AR"),format=f.optString("format","srt"),url=f.optString("url","");
-        TextView item=label(name+"\n"+release+" | "+lang+" | "+format,14,Color.WHITE);resultsBox.addView(item);
+        TextView item=label(name+"
+"+release+" | "+lang+" | "+format,14,Color.WHITE);resultsBox.addView(item);
         Button download=button("تنزيل وتشغيل: "+name);resultsBox.addView(download);
         download.setOnClickListener(v->downloadAndPlay(url,name));
     }
@@ -128,7 +131,8 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onActivityResult(int r,int code,Intent data){super.onActivityResult(r,code,data);if(r==PICK_SRT&&code==RESULT_OK&&data!=null){selectedSrt=data.getData();try{getContentResolver().takePersistableUriPermission(selectedSrt,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}fileLabel.setText("ملف الترجمة: "+selectedSrt.getLastPathSegment());}}
-    private String getDeviceIp(){try{android.net.wifi.WifiManager wm=(android.net.wifi.WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);int ip=wm.getConnectionInfo().getIpAddress();return (ip&255)+"."+((ip>>8)&255)+"."+((ip>>16)&255)+"."+((ip>>24)&255);}catch(Exception e){return "عنوان-IP";}}\n    private String profileKey(){String s=profileInput==null?"":profileInput.getText().toString().trim();return s.isEmpty()?"default":s;}
+    private String getDeviceIp(){try{android.net.wifi.WifiManager wm=(android.net.wifi.WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);int ip=wm.getConnectionInfo().getIpAddress();return (ip&255)+"."+((ip>>8)&255)+"."+((ip>>16)&255)+"."+((ip>>24)&255);}catch(Exception e){return "عنوان-IP";}}
+    private String profileKey(){String s=profileInput==null?"":profileInput.getText().toString().trim();return s.isEmpty()?"default":s;}
     private void loadProfile(){int ms=prefs.getInt(profileKey(),0);offsetSlider.setProgress(Math.max(0,Math.min(1200,600+ms/1000)));showOffset(ms);}
     private void showOffset(int ms){offsetLabel.setText((ms>0?"تأخير":ms<0?"تقديم":"بدون إزاحة")+String.format(Locale.US,": %+.1f ثانية",ms/1000.0));}
     private String enc(String s)throws Exception{return URLEncoder.encode(s,"UTF-8");}
