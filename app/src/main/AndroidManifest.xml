@@ -1,8 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:allowBackup="false" android:label="TV AI Translator" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+    <application android:allowBackup="false" android:label="مترجم التلفزيون" android:usesCleartextTraffic="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -10,6 +9,5 @@
             </intent-filter>
         </activity>
         <service android:name=".SubtitleOverlayService" android:exported="false" />
-        <service android:name=".LiveAiService" android:exported="false" />
     </application>
 </manifest>
