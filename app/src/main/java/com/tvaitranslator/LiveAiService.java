@@ -1,6 +1,10 @@
 package com.tvaitranslator;
 
 import android.app.Service;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.os.Build;
 import android.content.Intent;
 import android.content.Context;
 import android.os.Handler;
@@ -59,7 +63,27 @@ public class LiveAiService extends Service implements RecognitionListener {
 
     @Override public void onCreate() {
         super.onCreate();
+        startListeningNotification();
         languageIdentifier = LanguageIdentification.getClient();
+    }
+
+    private void startListeningNotification() {
+        final String channelId = "tv_ai_live_translation";
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationChannel channel = new NotificationChannel(channelId, "Live TV translation", NotificationManager.IMPORTANCE_LOW);
+            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) manager.createNotificationChannel(channel);
+        }
+        Notification.Builder builder = Build.VERSION.SDK_INT >= 26
+            ? new Notification.Builder(this, channelId)
+            : new Notification.Builder(this);
+        Notification notification = builder
+            .setContentTitle("TV AI Translator")
+            .setContentText("الاستماع للصوت وترجمته إلى العربية يعمل")
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setOngoing(true)
+            .build();
+        startForeground(27, notification);
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
