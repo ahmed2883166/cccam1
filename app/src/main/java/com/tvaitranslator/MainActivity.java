@@ -14,6 +14,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.*;
 import java.net.*;
+import java.util.Collections;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
@@ -24,6 +25,7 @@ public class MainActivity extends Activity {
     private LinearLayout resultsBox;
     private SeekBar offsetSlider;
     private Uri selectedSrt;
+    private boolean loadingProfile;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -57,11 +59,16 @@ public class MainActivity extends Activity {
         offsetLabel=label("التوقيت: 0.0 ثانية",17,Color.WHITE);root.addView(offsetLabel);
         offsetSlider=new SeekBar(this);offsetSlider.setMax(1200);root.addView(offsetSlider);
         offsetSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
-            public void onProgressChanged(SeekBar b,int p,boolean user){int ms=(p-600)*1000;showOffset(ms);prefs.edit().putInt(profileKey(),ms).apply();Intent u=new Intent(MainActivity.this,SubtitleOverlayService.class);u.setAction(SubtitleOverlayService.ACTION_OFFSET);u.putExtra(SubtitleOverlayService.EXTRA_OFFSET,ms);startService(u);}
+            public void onProgressChanged(SeekBar b,int p,boolean user){if(loadingProfile)return;int ms=(p-600)*1000;showOffset(ms);prefs.edit().putInt(profileKey(),ms).apply();Intent u=new Intent(MainActivity.this,SubtitleOverlayService.class);u.setAction(SubtitleOverlayService.ACTION_OFFSET);u.putExtra(SubtitleOverlayService.EXTRA_OFFSET,ms);startService(u);}
             public void onStartTrackingTouch(SeekBar b){} public void onStopTrackingTouch(SeekBar b){}
         });
         Button reset=button("إعادة التوقيت للصفر");root.addView(reset);reset.setOnClickListener(v->offsetSlider.setProgress(600));
         profileInput.setText("عام"); loadProfile();
+        profileInput.addTextChangedListener(new android.text.TextWatcher(){
+            public void beforeTextChanged(CharSequence s,int a,int b,int c){}
+            public void onTextChanged(CharSequence s,int a,int b,int c){loadProfile();}
+            public void afterTextChanged(android.text.Editable s){}
+        });
         setContentView(scroll);
     }
 
@@ -130,9 +137,33 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onActivityResult(int r,int code,Intent data){super.onActivityResult(r,code,data);if(r==PICK_SRT&&code==RESULT_OK&&data!=null){selectedSrt=data.getData();try{getContentResolver().takePersistableUriPermission(selectedSrt,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}fileLabel.setText("ملف الترجمة: "+selectedSrt.getLastPathSegment());}}
-    private String getDeviceIp(){try{android.net.wifi.WifiManager wm=(android.net.wifi.WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);int ip=wm.getConnectionInfo().getIpAddress();return (ip&255)+"."+((ip>>8)&255)+"."+((ip>>16)&255)+"."+((ip>>24)&255);}catch(Exception e){return "عنوان-IP";}}
+    private String getDeviceIp(){
+        try{
+            android.net.wifi.WifiManager wm=(android.net.wifi.WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);
+            int ip=wm.getConnectionInfo().getIpAddress();
+            if(ip!=0)return (ip&255)+"."+((ip>>8)&255)+"."+((ip>>16)&255)+"."+((ip>>24)&255);
+        }catch(Exception ignored){}
+        // Wi-Fi address unavailable (e.g. box connected by Ethernet): use any active IPv4 interface.
+        try{
+            Enumeration<NetworkInterface> nets=NetworkInterface.getNetworkInterfaces();
+            while(nets!=null&&nets.hasMoreElements()){
+                NetworkInterface n=nets.nextElement();
+                if(!n.isUp()||n.isLoopback())continue;
+                for(InetAddress a:Collections.list(n.getInetAddresses())){
+                    if(a instanceof Inet4Address&&!a.isLoopbackAddress())return a.getHostAddress();
+                }
+            }
+        }catch(Exception ignored){}
+        return "عنوان-IP";
+    }
     private String profileKey(){String s=profileInput==null?"":profileInput.getText().toString().trim();return s.isEmpty()?"default":s;}
-    private void loadProfile(){int ms=prefs.getInt(profileKey(),0);offsetSlider.setProgress(Math.max(0,Math.min(1200,600+ms/1000)));showOffset(ms);}
+    private void loadProfile(){
+        int ms=prefs.getInt(profileKey(),0);
+        loadingProfile=true;
+        try{offsetSlider.setProgress(Math.max(0,Math.min(1200,600+ms/1000)));}finally{loadingProfile=false;}
+        showOffset(ms);
+        prefs.edit().putString("last_profile",profileKey()).apply();
+    }
     private void showOffset(int ms){offsetLabel.setText((ms>0?"تأخير":ms<0?"تقديم":"بدون إزاحة")+String.format(Locale.US,": %+.1f ثانية",ms/1000.0));}
     private String enc(String s)throws Exception{return URLEncoder.encode(s,"UTF-8");}
     private String read(InputStream in)throws Exception{try(BufferedReader r=new BufferedReader(new InputStreamReader(in,"UTF-8"))){StringBuilder b=new StringBuilder();String l;while((l=r.readLine())!=null)b.append(l);return b.toString();}}

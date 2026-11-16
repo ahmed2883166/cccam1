@@ -9,6 +9,8 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.provider.Settings;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.WindowManager;
 import android.view.WindowManager.LayoutParams;
@@ -26,6 +28,7 @@ public class SubtitleOverlayService extends Service {
     public static final String ACTION_START = "com.tvaitranslator.START";
     public static final String ACTION_OFFSET = "com.tvaitranslator.OFFSET";
     public static final String EXTRA_OFFSET = "offset";
+    private static final String TAG = "TVTranslator";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<Cue> cues = new ArrayList<>();
     private WindowManager windowManager;
@@ -65,9 +68,10 @@ public class SubtitleOverlayService extends Service {
                 new Thread(() -> {
                     List<Cue> parsed = parse(uri);
                     handler.post(() -> {
+                        // Without the overlay permission, addView would throw and crash the whole app.
+                        if (!attachOverlay()) { stopSelf(); return; }
                         cues.clear(); cues.addAll(parsed);
                         startedAt = SystemClock.elapsedRealtime();
-                        attachOverlay();
                         handler.removeCallbacks(ticker);
                         handler.post(ticker);
                     });
@@ -77,7 +81,11 @@ public class SubtitleOverlayService extends Service {
         return START_NOT_STICKY;
     }
 
-    private void attachOverlay() {
+    private boolean attachOverlay() {
+        if (!Settings.canDrawOverlays(this)) {
+            Log.w(TAG, "Overlay permission missing; subtitles not shown");
+            return false;
+        }
         if (subtitleView == null) {
             subtitleView = new TextView(this);
             subtitleView.setTextColor(Color.WHITE);
@@ -94,9 +102,15 @@ public class SubtitleOverlayService extends Service {
                 PixelFormat.TRANSLUCENT);
             params.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
             params.y = 36;
-            windowManager.addView(subtitleView, params);
-            attached = true;
+            try {
+                windowManager.addView(subtitleView, params);
+                attached = true;
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Overlay attach failed", e);
+                return false;
+            }
         }
+        return true;
     }
 
     private List<Cue> parse(Uri uri) {
@@ -117,7 +131,9 @@ public class SubtitleOverlayService extends Service {
                 }
             }
             if (start >= 0 && text.length() > 0) result.add(new Cue(start, end, text.toString().trim()));
-        } catch (Exception ignored) { }
+        } catch (Exception e) {
+            Log.w(TAG, "SRT parse failed", e);
+        }
         Collections.sort(result, Comparator.comparingLong(c -> c.start));
         return result;
     }
