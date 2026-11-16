@@ -101,8 +101,7 @@ public class MainActivity extends Activity {
         if(f==null)return;
         String name=f.optString("name","subtitle.srt"),release=f.optString("release_name",parent);
         String lang=f.optString("language","AR"),format=f.optString("format","srt"),url=f.optString("url","");
-        TextView item=label(name+"
-"+release+" | "+lang+" | "+format,14,Color.WHITE);resultsBox.addView(item);
+        TextView item=label(name+"\n"+release+" | "+lang+" | "+format,14,Color.WHITE);resultsBox.addView(item);
         Button download=button("تنزيل وتشغيل: "+name);resultsBox.addView(download);
         download.setOnClickListener(v->downloadAndPlay(url,name));
     }
