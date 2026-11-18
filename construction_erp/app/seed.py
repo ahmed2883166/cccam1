@@ -1,6 +1,6 @@
 """Create tables and a demo company with a construction-oriented chart of accounts.
 
-Run once:  python -m app.seed
+Run once, after `alembic upgrade head`:  python -m app.seed
 """
 
 import os
@@ -9,7 +9,7 @@ from datetime import date
 from sqlalchemy import select
 
 from . import models  # noqa: F401  (registers tables on Base.metadata)
-from .db import Base, SessionLocal, engine
+from .db import SessionLocal
 from .models import Account, AccountType, Company, FiscalPeriod, User
 from .security import hash_password
 
@@ -52,7 +52,7 @@ CHART = [
 
 
 def seed(company_name: str, admin_username: str, admin_password: str) -> None:
-    Base.metadata.create_all(engine)
+    # Schema is managed by Alembic: run `alembic upgrade head` before seeding.
     with SessionLocal() as session:
         if session.scalar(select(Company).where(Company.name == company_name)):
             print("الشركة موجودة بالفعل، لم يتم أي تغيير.")
