@@ -33,4 +33,23 @@
   {% endfor %}
 </div>
 {% endfor %}
+
+<div class="card">
+  <h3 style="margin-top:0">دفعات مقدمة غير مستخدمة</h3>
+  <table>
+    <thead><tr><th>السند</th><th>الطرف</th><th class="num">التاريخ</th><th class="num">المتاح</th></tr></thead>
+    <tbody>
+    {% for kind, payment, remaining in advances %}
+      <tr>
+        <td><a href="/payments/{{ payment.id }}">{{ payment_labels[kind] ~ " " ~ payment.number }}</a></td>
+        <td>{{ payment.partner.name }}</td>
+        <td class="num">{{ payment.payment_date }}</td>
+        <td class="num">{{ "{:,.2f}".format(remaining) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">لا توجد دفعات مقدمة.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}

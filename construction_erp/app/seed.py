@@ -25,6 +25,7 @@ CHART = [
     ("1106", "محتجزات مدينة لدى العملاء", "Retention receivable", AccountType.ASSET, "11", True),
     ("1107", "المخزون", "Inventory", AccountType.ASSET, "11", True),
     ("1108", "ضريبة مدخلات", "Input VAT", AccountType.ASSET, "11", True),
+    ("1109", "دفعات مقدمة للموردين", "Advances to suppliers", AccountType.ASSET, "11", True),
     ("12", "الأصول غير المتداولة", "Non-current assets", AccountType.ASSET, "1", False),
     ("1201", "المعدات والآلات", "Plant and equipment", AccountType.ASSET, "12", True),
     ("1202", "مجمع إهلاك المعدات", "Accumulated depreciation - plant", AccountType.ASSET, "12", True),

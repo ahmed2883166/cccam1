@@ -27,5 +27,30 @@
   </table>
 </div>
 
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+{% if applied %}<div class="card good">تم تسوية الدفعة المقدمة على الفاتورة.</div>{% endif %}
+
+{% if remaining_advance > 0 %}
+<div class="card">
+  <h3 style="margin-top:0">دفعة مقدمة متاحة: {{ "{:,.2f}".format(remaining_advance) }}</h3>
+  {% if open_items %}
+  <form method="post" action="/payments/{{ payment.id }}/apply" class="form-grid">
+    <label>الفاتورة
+      <select name="invoice_id" required>
+        {% for item in open_items %}
+        <option value="{{ item.invoice.id }}">{{ "فاتورة " ~ item.invoice.number }} - متبقي {{ "{:,.2f}".format(item.outstanding) }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>المبلغ <input name="amount" inputmode="decimal" required></label>
+    <label>التاريخ <input type="date" name="apply_date" value="{{ today }}" required></label>
+    <div><button>تسوية من الدفعة المقدمة</button></div>
+  </form>
+  {% else %}
+  <p class="muted">لا توجد فواتير مفتوحة لنفس الطرف.</p>
+  {% endif %}
+</div>
+{% endif %}
+
 <a href="/payments?kind={{ payment.kind.value }}">رجوع للقائمة</a>
 {% endblock %}

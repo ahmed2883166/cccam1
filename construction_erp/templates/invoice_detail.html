@@ -8,12 +8,13 @@
   <span class="badge {{ 'good' if not is_draft else 'muted' }}">{{ status_labels[invoice.status] }}</span>
 </div>
 
-{% if posted %}<div class="card good">تم ترحيل الفاتورة وإنشاء القيد.</div>{% endif %}
+{% if posted %}<div class="card good">تم ترحيل المستند وإنشاء القيد.</div>{% endif %}
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
 <div class="card form-grid">
   <div><div class="muted small">{{ "العميل" if invoice.kind.value == "sales" else "المورد" }}</div>{{ invoice.partner.name }}</div>
   <div><div class="muted small">التاريخ</div>{{ invoice.invoice_date }}</div>
+  {% if original %}<div><div class="muted small">الفاتورة الأصلية</div><a href="/invoices/{{ original.id }}">{{ "فاتورة " ~ original.number }}</a></div>{% endif %}
   {% if entry %}
   <div><div class="muted small">القيد المحاسبي</div>قيد رقم {{ entry.number }}</div>
   {% endif %}
@@ -52,8 +53,54 @@
       <button style="background:transparent;color:var(--bad);border:1px solid var(--line)">حذف المسودة</button>
     </form>
   {% else %}
-    <p class="muted small">الفاتورة المرحّلة مش بتتعدل. أي تصحيح يتم بقيد عكسي (ميزة قادمة).</p>
+    <p class="muted small">المستند المرحّل مش بيتعدل. التصحيح يكون بإشعار {{ "دائن" if invoice.kind.value == "sales" else "مدين" }} أو بقيد يدوي.</p>
   {% endif %}
   <a href="/invoices?kind={{ invoice.kind.value }}">رجوع للقائمة</a>
 </div>
+
+{% if can_credit %}
+<div class="card" style="margin-top:16px">
+  <h3 style="margin-top:0">إشعار {{ "دائن (مرتجع مبيعات)" if invoice.kind.value == "sales" else "مدين (مرتجع مشتريات)" }}</h3>
+  <p class="muted small">حدّد الكمية المرتجعة لكل بند. الإشعار يتم ترحيله فورًا ويعكس القيد الأصلي، ولا يتجاوز المتاح لكل بند.</p>
+  <form method="post" action="/invoices/{{ invoice.id }}/credit">
+    <table>
+      <thead><tr><th>البند</th><th class="num">المتاح للإرجاع</th><th class="num">الكمية المرتجعة</th></tr></thead>
+      <tbody>
+      {% for l in invoice.lines %}
+        <tr>
+          <td>{{ l.description }}</td>
+          <td class="num">{{ "{:,.3f}".format(line_remaining[l.id]) }}</td>
+          <td class="num">
+            <input type="number" step="0.001" min="0" max="{{ line_remaining[l.id] }}" name="qty_{{ l.id }}" value="0"
+                   {{ 'disabled' if line_remaining[l.id] <= 0 }}>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
+      <label>تاريخ الإشعار <input type="date" name="credit_date" value="{{ today }}" required></label>
+      <button>ترحيل الإشعار</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{% if credit_notes %}
+<div class="card" style="margin-top:16px">
+  <h3 style="margin-top:0">الإشعارات المرتبطة</h3>
+  <table>
+    <thead><tr><th>الرقم</th><th>التاريخ</th><th class="num">الإجمالي</th></tr></thead>
+    <tbody>
+    {% for c in credit_notes %}
+      <tr>
+        <td><a href="/invoices/{{ c.id }}">{{ "إشعار " ~ c.number }}</a></td>
+        <td>{{ c.invoice_date }}</td>
+        <td class="num">{{ "{:,.2f}".format(c.total) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endblock %}

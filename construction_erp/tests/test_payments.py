@@ -44,7 +44,9 @@ def db():
                 Account(company_id=company.id, code="1103", name_ar="العملاء", type=AccountType.ASSET),
                 Account(company_id=company.id, code="1108", name_ar="ضريبة مدخلات", type=AccountType.ASSET),
                 Account(company_id=company.id, code="2101", name_ar="الموردون", type=AccountType.LIABILITY),
+                Account(company_id=company.id, code="2103", name_ar="دفعات مقبوضة مقدمًا", type=AccountType.LIABILITY),
                 Account(company_id=company.id, code="2104", name_ar="ضريبة مخرجات", type=AccountType.LIABILITY),
+                Account(company_id=company.id, code="1109", name_ar="دفعات مقدمة للموردين", type=AccountType.ASSET),
                 Account(company_id=company.id, code="4101", name_ar="إيراد", type=AccountType.REVENUE),
                 Account(company_id=company.id, code="5101", name_ar="مواد", type=AccountType.EXPENSE),
             ]
@@ -170,10 +172,21 @@ def test_allocation_cannot_exceed_outstanding(db):
         _receipt(db, "عميل أ", "200.00", [(inv, "200.00")])
 
 
-def test_allocations_must_equal_amount(db):
+def test_unallocated_remainder_becomes_customer_advance(db):
+    inv = _posted_invoice(db, InvoiceKind.SALES, "عميل أ", "4101")  # 1150
+    payment = _receipt(db, "عميل أ", "500.00", [(inv, "400.00")])
+    db.commit()
+    lines = db.scalars(select(JournalLine).where(JournalLine.entry_id == payment.journal_entry_id)).all()
+    by_code = {l.account.code: (l.debit, l.credit) for l in lines}
+    assert by_code["1102"][0] == Decimal("500.00")
+    assert by_code["1103"][1] == Decimal("400.00")
+    assert by_code["2103"][1] == Decimal("100.00")
+
+
+def test_advance_cannot_exceed_payment(db):
     inv = _posted_invoice(db, InvoiceKind.SALES, "عميل أ", "4101")
-    with pytest.raises(PaymentError, match="يساوي"):
-        _receipt(db, "عميل أ", "500.00", [(inv, "400.00")])
+    with pytest.raises(PaymentError, match="أكبر من مبلغ السند"):
+        _receipt(db, "عميل أ", "500.00", [(inv, "600.00")])
 
 
 def test_invoice_must_belong_to_partner(db):

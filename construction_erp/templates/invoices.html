@@ -23,7 +23,7 @@
     <tbody>
     {% for inv in invoices %}
       <tr>
-        <td class="num"><a href="/invoices/{{ inv.id }}">{{ inv.number or "مسودة #" ~ inv.id }}</a></td>
+        <td class="num"><a href="/invoices/{{ inv.id }}">{{ inv.number or "مسودة #" ~ inv.id }}</a>{% if inv.is_credit %} <span class="badge muted">إشعار</span>{% endif %}</td>
         <td class="num">{{ inv.invoice_date }}</td>
         <td>{{ inv.partner.name }}</td>
         <td class="num">{{ "{:,.2f}".format(inv.total) }}</td>

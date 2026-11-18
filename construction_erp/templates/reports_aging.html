@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}أعمار الديون{% endblock %}
+{% block content %}
+<h2>{{ kind_labels[kind] }}</h2>
+<p class="muted small">الرصيد المفتوح لكل طرف مقسّم حسب عمر الفاتورة (من تاريخ الفاتورة حتى تاريخ التقرير)، بعد خصم التحصيلات والإشعارات.</p>
+
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+  <a class="tab {{ 'active' if kind.value == 'receipt' }}" href="/reports/aging?kind=receipt&as_of={{ as_of }}">العملاء</a>
+  <a class="tab {{ 'active' if kind.value == 'payment' }}" href="/reports/aging?kind=payment&as_of={{ as_of }}">الموردون</a>
+</div>
+
+<form method="get" action="/reports/aging" class="filters" style="margin-bottom:12px">
+  <input type="hidden" name="kind" value="{{ kind.value }}">
+  <label>حتى تاريخ <input type="date" name="as_of" value="{{ as_of }}"></label>
+  <button>عرض</button>
+</form>
+
+<div class="card" style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr>
+        <th>الطرف</th>
+        {% for label, low, high in buckets %}<th class="num">{{ label }}</th>{% endfor %}
+        <th class="num">الإجمالي</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.name }}</td>
+        {% for v in r.buckets %}<td class="num">{{ "{:,.2f}".format(v) if v else "-" }}</td>{% endfor %}
+        <td class="num"><strong>{{ "{:,.2f}".format(r.total) }}</strong></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="{{ buckets|length + 2 }}" class="muted">لا توجد أرصدة مفتوحة.</td></tr>
+    {% endfor %}
+    </tbody>
+    {% if rows %}
+    <tfoot>
+      <tr>
+        <th>الإجمالي</th>
+        {% for v in totals %}<th class="num">{{ "{:,.2f}".format(v) }}</th>{% endfor %}
+        <th class="num">{{ "{:,.2f}".format(grand) }}</th>
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</div>
+{% endblock %}

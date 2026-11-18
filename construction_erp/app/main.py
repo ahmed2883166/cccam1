@@ -27,7 +27,9 @@ from .invoicing import (
     STATUS_LABELS_AR,
     InvoiceError,
     LineDraft,
+    create_credit_note,
     create_draft,
+    credited_quantity,
     parse_decimal,
     post_invoice,
 )
@@ -50,9 +52,13 @@ from .payments import (
     METHOD_LABELS_AR,
     PAYMENT_LABELS_AR,
     PaymentError,
+    advance_remaining,
+    apply_advance,
+    open_advances,
     open_invoices,
     record_payment,
 )
+from .reports import AGING_BUCKETS, aging_report, aging_totals, vat_summary
 from .security import verify_password
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -566,6 +572,13 @@ def invoice_detail(
     if invoice is None:
         raise HTTPException(status_code=404, detail="الفاتورة غير موجودة.")
     entry = session.get(JournalEntry, invoice.journal_entry_id) if invoice.journal_entry_id else None
+    original = session.get(Invoice, invoice.credit_for_id) if invoice.credit_for_id else None
+    credit_notes = session.scalars(
+        select(Invoice)
+        .where(Invoice.credit_for_id == invoice.id, Invoice.status == InvoiceStatus.POSTED)
+        .order_by(Invoice.number)
+    ).all()
+    line_remaining = {l.id: l.quantity - credited_quantity(session, l.id) for l in invoice.lines}
     return _render(
         request,
         "invoice_detail.html",
@@ -577,6 +590,11 @@ def invoice_detail(
         posted=posted,
         error=error,
         is_draft=invoice.status == InvoiceStatus.DRAFT,
+        original=original,
+        credit_notes=credit_notes,
+        line_remaining=line_remaining,
+        can_credit=invoice.status == InvoiceStatus.POSTED and not invoice.is_credit,
+        today=date.today().isoformat(),
     )
 
 
@@ -754,6 +772,8 @@ async def payment_create(
 def payment_detail(
     payment_id: int,
     request: Request,
+    applied: str = Query(""),
+    error: str = Query(""),
     user: User = Depends(require_user),
     session: Session = Depends(get_session),
 ):
@@ -761,6 +781,10 @@ def payment_detail(
     if payment is None:
         raise HTTPException(status_code=404, detail="السند غير موجود.")
     entry = session.get(JournalEntry, payment.journal_entry_id) if payment.journal_entry_id else None
+    remaining = advance_remaining(session, payment)
+    open_items = (
+        open_invoices(session, user.company_id, payment.kind, partner_id=payment.partner_id) if remaining > 0 else []
+    )
     return _render(
         request,
         "payment_detail.html",
@@ -769,6 +793,11 @@ def payment_detail(
         labels=PAYMENT_LABELS_AR,
         method_labels=METHOD_LABELS_AR,
         entry=entry,
+        remaining_advance=remaining,
+        open_items=open_items,
+        applied=applied,
+        error=error,
+        today=date.today().isoformat(),
     )
 
 
@@ -788,4 +817,149 @@ def balances(request: Request, user: User = Depends(require_user), session: Sess
             dict(title=title, groups=sorted(by_partner.values(), key=lambda g: g["name"]),
                  grand_total=sum((g["total"] for g in by_partner.values()), Decimal("0")))
         )
-    return _render(request, "balances.html", user=user, sections=sections, kind_labels=KIND_LABELS_AR)
+    advances = []
+    for kind in (PaymentKind.RECEIPT, PaymentKind.PAYMENT):
+        advances += [(kind, payment, remaining) for payment, remaining in open_advances(session, user.company_id, kind)]
+    return _render(
+        request,
+        "balances.html",
+        user=user,
+        sections=sections,
+        advances=advances,
+        kind_labels=KIND_LABELS_AR,
+        payment_labels=PAYMENT_LABELS_AR,
+    )
+
+
+def _parse_date(raw: str, field: str) -> date:
+    try:
+        return date.fromisoformat((raw or "").strip())
+    except ValueError:
+        raise InvoiceError(f"{field} غير صحيح.")
+
+
+@app.post("/invoices/{invoice_id}/credit")
+async def invoice_credit_note(
+    invoice_id: int,
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    form = await request.form()
+    try:
+        quantities: dict[int, Decimal] = {}
+        for key, raw in form.items():
+            if not key.startswith("qty_"):
+                continue
+            value = parse_decimal(str(raw), "الكمية") if str(raw).strip() else Decimal("0")
+            if value < 0:
+                raise InvoiceError("الكمية المرتجعة مش ممكن تكون سالبة.")
+            if value > 0:
+                quantities[int(key[4:])] = value
+        credit_date = _parse_date(str(form.get("credit_date", "")), "تاريخ الإشعار")
+        credit = create_credit_note(
+            session,
+            company_id=user.company_id,
+            user_id=user.id,
+            original_id=invoice_id,
+            credit_quantities=quantities,
+            credit_date=credit_date,
+        )
+        session.commit()
+    except (InvoiceError, PostingError, ValueError) as exc:
+        session.rollback()
+        return RedirectResponse(f"/invoices/{invoice_id}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(f"/invoices/{credit.id}?posted=1", status_code=303)
+
+
+@app.post("/payments/{payment_id}/apply")
+async def payment_apply_advance(
+    payment_id: int,
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    form = await request.form()
+    try:
+        invoice_id = int(str(form.get("invoice_id", "")).strip() or 0)
+        amount = parse_decimal(str(form.get("amount", "")), "المبلغ")
+        apply_date = _parse_date(str(form.get("apply_date", "")), "التاريخ")
+        apply_advance(
+            session,
+            company_id=user.company_id,
+            user_id=user.id,
+            payment_id=payment_id,
+            invoice_id=invoice_id,
+            amount=amount,
+            apply_date=apply_date,
+        )
+        session.commit()
+    except (InvoiceError, PaymentError, PostingError, ValueError) as exc:
+        session.rollback()
+        return RedirectResponse(f"/payments/{payment_id}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(f"/payments/{payment_id}?applied=1", status_code=303)
+
+
+AGING_KIND_LABELS = {
+    PaymentKind.RECEIPT: "أعمار ذمم العملاء",
+    PaymentKind.PAYMENT: "أعمار ذمم الموردين",
+}
+
+
+@app.get("/reports/aging", response_class=HTMLResponse)
+def aging_page(
+    request: Request,
+    kind: str = Query("receipt"),
+    as_of: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    kind_enum = _parse_kind(kind, PaymentKind, default=PaymentKind.RECEIPT)
+    try:
+        when = date.fromisoformat(as_of) if as_of else date.today()
+    except ValueError:
+        when = date.today()
+    rows = aging_report(session, user.company_id, kind_enum, when)
+    totals = aging_totals(rows)
+    return _render(
+        request,
+        "reports_aging.html",
+        user=user,
+        kind=kind_enum,
+        kind_labels=AGING_KIND_LABELS,
+        rows=rows,
+        totals=totals,
+        grand=sum(totals, Decimal("0")),
+        buckets=AGING_BUCKETS,
+        as_of=when.isoformat(),
+    )
+
+
+@app.get("/reports/vat", response_class=HTMLResponse)
+def vat_page(
+    request: Request,
+    start: str = Query(""),
+    end: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    today = date.today()
+    error = ""
+    try:
+        start_d = date.fromisoformat(start) if start else date(today.year, today.month, 1)
+        end_d = date.fromisoformat(end) if end else today
+    except ValueError:
+        start_d, end_d = date(today.year, today.month, 1), today
+        error = "صيغة التاريخ غير صحيحة."
+    if start_d > end_d:
+        error = "تاريخ البداية بعد تاريخ النهاية."
+    summary = vat_summary(session, user.company_id, start_d, end_d)
+    return _render(
+        request,
+        "reports_vat.html",
+        user=user,
+        s=summary,
+        start=start_d.isoformat(),
+        end=end_d.isoformat(),
+        error=error,
+    )

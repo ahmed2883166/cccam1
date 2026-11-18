@@ -1,4 +1,4 @@
-"""Sales and purchase invoices: validation, totals, and posting to the general ledger."""
+"""Sales and purchase invoices, credit/debit notes, validation, totals, and posting to the ledger."""
 
 from dataclasses import dataclass
 from datetime import date
@@ -30,6 +30,7 @@ CONTROL_CODES = {
 
 KIND_LABELS_AR = {InvoiceKind.SALES: "فاتورة مبيعات", InvoiceKind.PURCHASE: "فاتورة مشتريات"}
 STATUS_LABELS_AR = {InvoiceStatus.DRAFT: "مسودة", InvoiceStatus.POSTED: "مرحّلة"}
+CREDIT_LABELS_AR = {InvoiceKind.SALES: "إشعار دائن", InvoiceKind.PURCHASE: "إشعار مدين"}
 
 
 class InvoiceError(ValueError):
@@ -110,6 +111,7 @@ def create_draft(
         company_id=company_id,
         kind=kind,
         status=InvoiceStatus.DRAFT,
+        is_credit=False,
         partner_id=partner_id,
         invoice_date=invoice_date,
         created_by_id=user_id,
@@ -151,6 +153,79 @@ def create_draft(
     return invoice
 
 
+def credited_quantity(session: Session, source_line_id: int) -> Decimal:
+    """Quantity already credited on posted credit notes for one original invoice line."""
+    value = session.scalar(
+        select(func.coalesce(func.sum(InvoiceLine.quantity), 0))
+        .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
+        .where(InvoiceLine.source_line_id == source_line_id, Invoice.status == InvoiceStatus.POSTED)
+    )
+    return Decimal(str(value))
+
+
+def create_credit_note(
+    session: Session,
+    *,
+    company_id: int,
+    user_id: int,
+    original_id: int,
+    credit_quantities: dict[int, Decimal],
+    credit_date: date,
+) -> Invoice:
+    """Create and post a credit note (sales) or debit note (purchases) against a posted invoice."""
+    original = session.scalar(select(Invoice).where(Invoice.id == original_id, Invoice.company_id == company_id))
+    if original is None:
+        raise InvoiceError("الفاتورة الأصلية غير موجودة.")
+    if original.is_credit:
+        raise InvoiceError("لا يمكن إنشاء إشعار على إشعار.")
+    if original.status != InvoiceStatus.POSTED:
+        raise InvoiceError("لازم الفاتورة تكون مرحّلة قبل إنشاء إشعار.")
+
+    credit_lines: list[InvoiceLine] = []
+    for line in original.lines:
+        qty = credit_quantities.get(line.id, Decimal("0"))
+        if qty <= 0:
+            continue
+        remaining = line.quantity - credited_quantity(session, line.id)
+        if qty > remaining:
+            raise InvoiceError(f"الكمية المرتجعة للبند «{line.description}» أكبر من المتاح ({remaining}).")
+        net, tax, total = compute_line(qty, line.unit_price, line.tax_rate)
+        credit_lines.append(
+            InvoiceLine(
+                account_id=line.account_id,
+                description=line.description,
+                quantity=qty,
+                unit_price=line.unit_price,
+                tax_rate=line.tax_rate,
+                net=net,
+                tax=tax,
+                total=total,
+                source_line_id=line.id,
+            )
+        )
+    if not credit_lines:
+        raise InvoiceError("اختار كمية مرتجعة لبند واحد على الأقل.")
+
+    credit = Invoice(
+        company_id=company_id,
+        kind=original.kind,
+        status=InvoiceStatus.DRAFT,
+        is_credit=True,
+        credit_for_id=original.id,
+        partner_id=original.partner_id,
+        invoice_date=credit_date,
+        created_by_id=user_id,
+    )
+    credit.lines = credit_lines
+    credit.subtotal = sum((l.net for l in credit_lines), Decimal("0"))
+    credit.tax_total = sum((l.tax for l in credit_lines), Decimal("0"))
+    credit.total = credit.subtotal + credit.tax_total
+    session.add(credit)
+    session.flush()
+    post_invoice(session, company_id=company_id, user_id=user_id, invoice_id=credit.id)
+    return credit
+
+
 def _control_account(session: Session, company_id: int, kind: InvoiceKind, key: str) -> Account:
     code = CONTROL_CODES[kind][key]
     account = session.scalar(select(Account).where(Account.company_id == company_id, Account.code == code))
@@ -159,11 +234,42 @@ def _control_account(session: Session, company_id: int, kind: InvoiceKind, key: 
     return account
 
 
-def _next_number(session: Session, company_id: int, kind: InvoiceKind) -> int:
+def _next_number(session: Session, company_id: int, kind: InvoiceKind, is_credit: bool) -> int:
     current = session.scalar(
-        select(func.max(Invoice.number)).where(Invoice.company_id == company_id, Invoice.kind == kind)
+        select(func.max(Invoice.number)).where(
+            Invoice.company_id == company_id, Invoice.kind == kind, Invoice.is_credit == is_credit
+        )
     )
     return (current or 0) + 1
+
+
+def _entry_lines(invoice: Invoice, partner_control: Account, tax_control: Account) -> list[LineInput]:
+    """Build the journal lines. Normal invoices and credit notes differ only by direction."""
+    total, tax = invoice.total, invoice.tax_total
+    lines: list[LineInput] = []
+    if invoice.kind == InvoiceKind.SALES:
+        if not invoice.is_credit:
+            lines.append(LineInput(partner_control.id, debit=total))
+            lines += [LineInput(l.account_id, credit=l.net, memo=l.description) for l in invoice.lines]
+            if tax:
+                lines.append(LineInput(tax_control.id, credit=tax))
+        else:
+            lines += [LineInput(l.account_id, debit=l.net, memo=l.description) for l in invoice.lines]
+            if tax:
+                lines.append(LineInput(tax_control.id, debit=tax))
+            lines.append(LineInput(partner_control.id, credit=total))
+    else:
+        if not invoice.is_credit:
+            lines += [LineInput(l.account_id, debit=l.net, memo=l.description) for l in invoice.lines]
+            if tax:
+                lines.append(LineInput(tax_control.id, debit=tax))
+            lines.append(LineInput(partner_control.id, credit=total))
+        else:
+            lines.append(LineInput(partner_control.id, debit=total))
+            lines += [LineInput(l.account_id, credit=l.net, memo=l.description) for l in invoice.lines]
+            if tax:
+                lines.append(LineInput(tax_control.id, credit=tax))
+    return [line for line in lines if line.debit or line.credit]
 
 
 def post_invoice(session: Session, *, company_id: int, user_id: int, invoice_id: int) -> Invoice:
@@ -179,32 +285,18 @@ def post_invoice(session: Session, *, company_id: int, user_id: int, invoice_id:
     partner_control = _control_account(session, company_id, kind, "partner")
     tax_control = _control_account(session, company_id, kind, "tax")
 
-    entry_lines: list[LineInput] = []
-    if kind == InvoiceKind.SALES:
-        entry_lines.append(LineInput(partner_control.id, debit=invoice.total))
-        for line in invoice.lines:
-            entry_lines.append(LineInput(line.account_id, credit=line.net, memo=line.description))
-        if invoice.tax_total:
-            entry_lines.append(LineInput(tax_control.id, credit=invoice.tax_total))
-    else:
-        for line in invoice.lines:
-            entry_lines.append(LineInput(line.account_id, debit=line.net, memo=line.description))
-        if invoice.tax_total:
-            entry_lines.append(LineInput(tax_control.id, debit=invoice.tax_total))
-        entry_lines.append(LineInput(partner_control.id, credit=invoice.total))
-
-    description = f"{KIND_LABELS_AR[kind]} - {invoice.partner.name}"
+    description_prefix = CREDIT_LABELS_AR[kind] if invoice.is_credit else KIND_LABELS_AR[kind]
     entry = post_entry(
         session,
         company_id=company_id,
         user_id=user_id,
         entry_date=invoice.invoice_date,
-        description=description,
-        lines=[line for line in entry_lines if line.debit or line.credit],
+        description=f"{description_prefix} - {invoice.partner.name}",
+        lines=_entry_lines(invoice, partner_control, tax_control),
     )
     session.flush()  # assigns entry.id
 
-    invoice.number = _next_number(session, company_id, kind)
+    invoice.number = _next_number(session, company_id, kind, invoice.is_credit)
     invoice.status = InvoiceStatus.POSTED
     invoice.journal_entry_id = entry.id
     return invoice

@@ -142,7 +142,7 @@ class Partner(Base):
 
 class Invoice(Base):
     __tablename__ = "invoices"
-    __table_args__ = (UniqueConstraint("company_id", "kind", "number", name="uq_invoice_number"),)
+    __table_args__ = (UniqueConstraint("company_id", "kind", "is_credit", "number", name="uq_invoice_number"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
@@ -151,6 +151,8 @@ class Invoice(Base):
         SAEnum(InvoiceStatus, native_enum=False, length=20), default=InvoiceStatus.DRAFT
     )
     number: Mapped[int | None] = mapped_column(nullable=True)  # assigned when posted
+    is_credit: Mapped[bool] = mapped_column(Boolean, default=False)  # credit note (إشعار دائن / مدين)
+    credit_for_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id"), nullable=True)
     partner_id: Mapped[int] = mapped_column(ForeignKey("partners.id"))
     invoice_date: Mapped[date] = mapped_column(Date, index=True)
     subtotal: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
@@ -179,6 +181,8 @@ class InvoiceLine(Base):
     net: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     tax: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     total: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+
+    source_line_id: Mapped[int | None] = mapped_column(ForeignKey("invoice_lines.id"), nullable=True)
 
     invoice: Mapped[Invoice] = relationship(back_populates="lines")
     account: Mapped[Account] = relationship()
