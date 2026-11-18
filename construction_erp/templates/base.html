@@ -26,6 +26,18 @@
     .muted { color:var(--muted); }
     .bad { color:var(--bad); } .good { color:var(--good); }
     .error { background:#fdecea; color:#611a15; padding:10px; border-radius:8px; margin-bottom:12px; }
+    .small { font-size:.8rem; }
+    .btn { background:var(--accent); color:#fff; padding:8px 14px; border-radius:8px; text-decoration:none; font-weight:600; }
+    .filters { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .filters input { flex:1; min-width:200px; }
+    .form-grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); }
+    .form-grid label { display:grid; gap:4px; }
+    .badge { font-size:.8rem; padding:2px 10px; border-radius:999px; border:1px solid var(--line); white-space:nowrap; }
+    .t-asset { background:#e8f1ff; color:#1f4fa3; } .t-liability { background:#fdecea; color:#8a1f1f; }
+    .t-equity { background:#f1e9ff; color:#5b2ea6; } .t-revenue { background:#e7f6ec; color:#1e6b3a; }
+    .t-expense { background:#fff4e0; color:#8a5a00; }
+    table.coa tr.group td { font-weight:700; background:color-mix(in srgb, var(--accent) 6%, transparent); }
+    table.coa tr.inactive td { opacity:.5; }
     @media (max-width:600px) { main { padding:12px; } th, td { font-size:.9rem; } }
   </style>
 </head>

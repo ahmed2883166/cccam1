@@ -1,8 +1,9 @@
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, Form, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -10,9 +11,18 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from .accounting import LineInput, PostingError, post_entry
+from .chart import (
+    TYPE_LABELS_AR,
+    ChartError,
+    balances_by_account,
+    build_tree,
+    create_account,
+    filter_flat,
+    set_account_active,
+)
 from .config import settings
 from .db import get_session
-from .models import Account, JournalLine, User
+from .models import Account, AccountType, JournalLine, User
 from .security import verify_password
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -33,6 +43,12 @@ def current_user(request: Request, session: Session = Depends(get_session)) -> U
 def require_user(user: User | None = Depends(current_user)) -> User:
     if user is None:
         raise _Redirect("/login")
+    return user
+
+
+def require_admin(user: User = Depends(require_user)) -> User:
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="هذه الصفحة للمدير فقط.")
     return user
 
 
@@ -102,11 +118,104 @@ def dashboard(request: Request, user: User = Depends(require_user), session: Ses
 
 
 @app.get("/accounts", response_class=HTMLResponse)
-def accounts(request: Request, user: User = Depends(require_user), session: Session = Depends(get_session)):
-    rows = session.scalars(
-        select(Account).where(Account.company_id == user.company_id).order_by(Account.code)
+def accounts(
+    request: Request,
+    q: str = Query(""),
+    account_type: str = Query("", alias="type"),
+    created: str = Query(""),
+    error: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    all_accounts = session.scalars(select(Account).where(Account.company_id == user.company_id)).all()
+    balances = balances_by_account(session, user.company_id)
+    is_filtered = bool(q.strip() or account_type)
+    rows = filter_flat(all_accounts, balances, q, account_type) if is_filtered else build_tree(all_accounts, balances)
+    context = dict(
+        user=user,
+        rows=rows,
+        q=q,
+        account_type=account_type,
+        is_filtered=is_filtered,
+        account_types=list(AccountType),
+        type_labels=TYPE_LABELS_AR,
+        created=created,
+        error=error,
+    )
+    if request.headers.get("HX-Request"):
+        return _render(request, "_accounts_table.html", **context)
+    return _render(request, "accounts.html", **context)
+
+
+def _account_form_context(session: Session, user: User, error: str | None = None, form: dict | None = None) -> dict:
+    parents = session.scalars(
+        select(Account)
+        .where(Account.company_id == user.company_id, Account.is_postable.is_(False), Account.is_active.is_(True))
+        .order_by(Account.code)
     ).all()
-    return _render(request, "accounts.html", user=user, accounts=rows)
+    return dict(
+        user=user,
+        parents=parents,
+        account_types=list(AccountType),
+        type_labels=TYPE_LABELS_AR,
+        error=error,
+        form=form or {"is_postable": True},
+    )
+
+
+@app.get("/accounts/new", response_class=HTMLResponse)
+def account_new_form(request: Request, user: User = Depends(require_admin), session: Session = Depends(get_session)):
+    return _render(request, "account_form.html", **_account_form_context(session, user))
+
+
+@app.post("/accounts/new", response_class=HTMLResponse)
+async def account_new_post(
+    request: Request,
+    user: User = Depends(require_admin),
+    session: Session = Depends(get_session),
+):
+    form = await request.form()
+    values = {k: str(form.get(k, "")).strip() for k in ("code", "name_ar", "name_en", "account_type", "parent_id")}
+    values["is_postable"] = form.get("is_postable") == "on"
+    try:
+        create_account(
+            session,
+            company_id=user.company_id,
+            code=values["code"],
+            name_ar=values["name_ar"],
+            name_en=values["name_en"],
+            account_type=AccountType(values["account_type"]),
+            parent_id=int(values["parent_id"]) if values["parent_id"] else None,
+            is_postable=values["is_postable"],
+        )
+        session.commit()
+    except (ChartError, ValueError) as exc:
+        session.rollback()
+        message = str(exc) if isinstance(exc, ChartError) else "نوع الحساب غير صحيح."
+        return _render(
+            request,
+            "account_form.html",
+            **_account_form_context(session, user, error=message, form=values),
+        )
+    return RedirectResponse("/accounts?created=1", status_code=303)
+
+
+@app.post("/accounts/{account_id}/status")
+def account_toggle_status(
+    account_id: int,
+    user: User = Depends(require_admin),
+    session: Session = Depends(get_session),
+):
+    account = session.scalar(select(Account).where(Account.id == account_id, Account.company_id == user.company_id))
+    if account is None:
+        raise HTTPException(status_code=404, detail="الحساب غير موجود.")
+    try:
+        set_account_active(session, company_id=user.company_id, account_id=account_id, active=not account.is_active)
+        session.commit()
+    except ChartError as exc:
+        session.rollback()
+        return RedirectResponse(f"/accounts?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse("/accounts", status_code=303)
 
 
 @app.get("/journal", response_class=HTMLResponse)

@@ -1,20 +1,29 @@
 {% extends "base.html" %}
 {% block title %}شجرة الحسابات{% endblock %}
 {% block content %}
-<h2>شجرة الحسابات</h2>
-<div class="card">
-  <table>
-    <thead><tr><th class="num">الكود</th><th>الاسم</th><th>النوع</th><th>قابل للقيد</th></tr></thead>
-    <tbody>
-    {% for a in accounts %}
-      <tr>
-        <td class="num">{{ a.code }}</td>
-        <td style="padding-inline-start:{{ (a.code|length - 1) * 8 }}px">{{ a.name_ar }}</td>
-        <td>{{ a.type.value }}</td>
-        <td>{{ "نعم" if a.is_postable else "لا (تجميعي)" }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+  <h2 style="margin:0;margin-inline-end:auto">شجرة الحسابات</h2>
+  {% if user.is_admin %}<a class="btn" href="/accounts/new">+ حساب جديد</a>{% endif %}
 </div>
+
+{% if created %}<div class="card good">تم إنشاء الحساب.</div>{% endif %}
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<form class="card filters" method="get" action="/accounts"
+      hx-get="/accounts" hx-target="#accounts-table"
+      hx-trigger="input changed delay:300ms, change" hx-push-url="true">
+  <input type="search" name="q" value="{{ q }}" placeholder="ابحث بالكود أو الاسم">
+  <select name="type">
+    <option value="">كل الأنواع</option>
+    {% for t in account_types %}
+      <option value="{{ t.value }}" {% if account_type == t.value %}selected{% endif %}>{{ type_labels[t] }}</option>
+    {% endfor %}
+  </select>
+  <a href="/accounts">مسح الفلاتر</a>
+</form>
+
+<div class="card" id="accounts-table">
+  {% include "_accounts_table.html" %}
+</div>
+<p class="muted small">الأرصدة: مدين أو دائن حسب صافي الحركة. الحسابات التجميعية بتعرض مجموع أرصدة فروعها.</p>
 {% endblock %}

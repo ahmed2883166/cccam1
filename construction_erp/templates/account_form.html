@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}حساب جديد{% endblock %}
+{% block content %}
+<h2>حساب جديد</h2>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<form method="post" action="/accounts/new" class="card form-grid">
+  <label>الكود
+    <input name="code" value="{{ form.code or '' }}" inputmode="numeric" dir="ltr" required>
+  </label>
+  <label>الاسم بالعربي
+    <input name="name_ar" value="{{ form.name_ar or '' }}" required>
+  </label>
+  <label>الاسم بالإنجليزي
+    <input name="name_en" value="{{ form.name_en or '' }}" dir="ltr">
+  </label>
+  <label>النوع
+    <select name="account_type" required>
+      <option value="">— اختر —</option>
+      {% for t in account_types %}
+        <option value="{{ t.value }}" {% if form.account_type == t.value %}selected{% endif %}>{{ type_labels[t] }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>يتبع (الحساب الأب)
+    <select name="parent_id">
+      <option value="">— حساب رئيسي (بدون أب) —</option>
+      {% for p in parents %}
+        <option value="{{ p.id }}" {% if form.parent_id == p.id|string %}selected{% endif %}>{{ p.code }} - {{ p.name_ar }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label style="display:flex;gap:8px;align-items:center">
+    <input type="checkbox" name="is_postable" {% if form.is_postable %}checked{% endif %}>
+    قابل للقيد (حساب تفصيلي)
+  </label>
+  <div style="grid-column:1/-1;display:flex;gap:12px;align-items:center">
+    <button>حفظ الحساب</button>
+    <a href="/accounts">إلغاء</a>
+  </div>
+</form>
+
+<p class="muted small">القواعد: الحساب الفرعي يكون تحت حساب تجميعي، ونوعه نفس نوع الأب، وكوده يبدأ بكود الأب ويكون أطول منه. الحساب القابل للقيد مش بيكون أب لحسابات تانية.</p>
+{% endblock %}

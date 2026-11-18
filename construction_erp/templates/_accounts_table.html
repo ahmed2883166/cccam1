@@ -1,0 +1,45 @@
+<table class="coa">
+  <thead>
+    <tr>
+      <th class="num">الكود</th>
+      <th>الحساب</th>
+      <th>النوع</th>
+      <th class="num">الرصيد</th>
+      <th>الحالة</th>
+      {% if user.is_admin %}<th></th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for row in rows %}
+    {% set a = row.account %}
+    <tr class="{{ 'group' if not a.is_postable }} {{ 'inactive' if not a.is_active }}">
+      <td class="num">{{ a.code }}</td>
+      <td style="padding-inline-start:{{ 12 + row.depth * 22 }}px">
+        {{ a.name_ar }}
+        {% if a.name_en %}<div class="muted small" dir="ltr" style="text-align:right">{{ a.name_en }}</div>{% endif %}
+      </td>
+      <td>
+        <span class="badge t-{{ a.type.value }}">{{ type_labels[a.type] }}</span>
+        <div class="muted small">{{ "قابل للقيد" if a.is_postable else "تجميعي" }}</div>
+      </td>
+      <td class="num">
+        {% if row.balance > 0 %}<span class="muted small">مدين</span>
+        {% elif row.balance < 0 %}<span class="muted small">دائن</span>{% endif %}
+        {{ "{:,.2f}".format(row.balance|abs) }}
+      </td>
+      <td>{{ "نشط" if a.is_active else "موقوف" }}</td>
+      {% if user.is_admin %}
+      <td>
+        <form method="post" action="/accounts/{{ a.id }}/status" style="margin:0">
+          <button class="small" style="padding:4px 10px;background:transparent;color:var(--accent);border:1px solid var(--line)">
+            {{ "إيقاف" if a.is_active else "تفعيل" }}
+          </button>
+        </form>
+      </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">لا توجد حسابات مطابقة.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
