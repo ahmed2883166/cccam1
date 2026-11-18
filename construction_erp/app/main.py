@@ -22,7 +22,27 @@ from .chart import (
 )
 from .config import settings
 from .db import get_session
-from .models import Account, AccountType, JournalLine, User
+from .invoicing import (
+    KIND_LABELS_AR,
+    STATUS_LABELS_AR,
+    InvoiceError,
+    LineDraft,
+    create_draft,
+    parse_decimal,
+    post_invoice,
+)
+from .models import (
+    Account,
+    AccountType,
+    Invoice,
+    InvoiceKind,
+    InvoiceStatus,
+    JournalEntry,
+    JournalLine,
+    Partner,
+    PartnerKind,
+    User,
+)
 from .security import verify_password
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -303,3 +323,280 @@ def trial_balance(request: Request, user: User = Depends(require_user), session:
         total_credit=total_credit,
         balanced=total_debit == total_credit,
     )
+
+
+# ---------- Partners (customers and suppliers) ----------
+
+PARTNER_KIND_LABELS = {PartnerKind.CUSTOMER: "عميل", PartnerKind.SUPPLIER: "مورد"}
+
+
+def _parse_kind(raw: str, enum_cls, default=None):
+    try:
+        return enum_cls(raw)
+    except ValueError:
+        if default is not None:
+            return default
+        raise HTTPException(status_code=400, detail="نوع غير صحيح.")
+
+
+@app.get("/partners", response_class=HTMLResponse)
+def partners_list(
+    request: Request,
+    kind: str = Query(""),
+    created: str = Query(""),
+    error: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    query = select(Partner).where(Partner.company_id == user.company_id).order_by(Partner.name)
+    if kind:
+        query = query.where(Partner.kind == _parse_kind(kind, PartnerKind))
+    return _render(
+        request,
+        "partners.html",
+        user=user,
+        partners=session.scalars(query).all(),
+        kind=kind,
+        kinds=list(PartnerKind),
+        kind_labels=PARTNER_KIND_LABELS,
+        created=created,
+        error=error,
+    )
+
+
+@app.post("/partners/new")
+async def partner_create(
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    form = await request.form()
+    try:
+        kind = _parse_kind(str(form.get("kind", "")), PartnerKind, default=None)
+        if kind is None:
+            raise InvoiceError("نوع الطرف غير صحيح.")
+        name = str(form.get("name", "")).strip()
+        if not name:
+            raise InvoiceError("اسم الطرف مطلوب.")
+        session.add(
+            Partner(
+                company_id=user.company_id,
+                kind=kind,
+                name=name,
+                tax_number=str(form.get("tax_number", "")).strip() or None,
+                phone=str(form.get("phone", "")).strip() or None,
+                is_active=True,
+            )
+        )
+        session.commit()
+    except (InvoiceError, HTTPException) as exc:
+        session.rollback()
+        message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        return RedirectResponse(f"/partners?error={quote(message)}", status_code=303)
+    return RedirectResponse("/partners?created=1", status_code=303)
+
+
+# ---------- Sales and purchase invoices ----------
+
+def _line_accounts(session: Session, user: User, kind: InvoiceKind) -> list[Account]:
+    types = [AccountType.REVENUE] if kind == InvoiceKind.SALES else [AccountType.EXPENSE, AccountType.ASSET]
+    return session.scalars(
+        select(Account)
+        .where(
+            Account.company_id == user.company_id,
+            Account.is_postable.is_(True),
+            Account.is_active.is_(True),
+            Account.type.in_(types),
+        )
+        .order_by(Account.code)
+    ).all()
+
+
+def _active_partners(session: Session, user: User, kind: InvoiceKind) -> list[Partner]:
+    partner_kind = PartnerKind.CUSTOMER if kind == InvoiceKind.SALES else PartnerKind.SUPPLIER
+    return session.scalars(
+        select(Partner)
+        .where(Partner.company_id == user.company_id, Partner.kind == partner_kind, Partner.is_active.is_(True))
+        .order_by(Partner.name)
+    ).all()
+
+
+@app.get("/invoices", response_class=HTMLResponse)
+def invoices_list(
+    request: Request,
+    kind: str = Query("sales"),
+    created: str = Query(""),
+    error: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    invoice_kind = _parse_kind(kind, InvoiceKind)
+    invoices = session.scalars(
+        select(Invoice)
+        .where(Invoice.company_id == user.company_id, Invoice.kind == invoice_kind)
+        .order_by(Invoice.invoice_date.desc(), Invoice.id.desc())
+    ).all()
+    return _render(
+        request,
+        "invoices.html",
+        user=user,
+        kind=invoice_kind,
+        kinds=list(InvoiceKind),
+        kind_labels=KIND_LABELS_AR,
+        status_labels=STATUS_LABELS_AR,
+        invoices=invoices,
+        created=created,
+        error=error,
+    )
+
+
+def _invoice_form_context(session: Session, user: User, kind: InvoiceKind, **extra) -> dict:
+    context = dict(
+        user=user,
+        kind=kind,
+        kind_labels=KIND_LABELS_AR,
+        partners=_active_partners(session, user, kind),
+        accounts=_line_accounts(session, user, kind),
+        invoice_date=date.today().isoformat(),
+        rows=None,
+        error=None,
+        partner_id="",
+    )
+    context.update(extra)
+    return context
+
+
+@app.get("/invoices/new", response_class=HTMLResponse)
+def invoice_new_form(
+    request: Request,
+    kind: str = Query("sales"),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    invoice_kind = _parse_kind(kind, InvoiceKind)
+    return _render(request, "invoice_form.html", **_invoice_form_context(session, user, invoice_kind))
+
+
+@app.post("/invoices/new", response_class=HTMLResponse)
+async def invoice_create(
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    form = await request.form()
+    invoice_kind = _parse_kind(str(form.get("kind", "sales")), InvoiceKind)
+    account_ids = form.getlist("account_id")
+    descriptions = form.getlist("description")
+    quantities = form.getlist("quantity")
+    prices = form.getlist("unit_price")
+    tax_rates = form.getlist("tax_rate")
+    rows = [
+        {
+            "account_id": acc,
+            "description": desc,
+            "quantity": qty,
+            "unit_price": price,
+            "tax_rate": tax,
+        }
+        for acc, desc, qty, price, tax in zip(account_ids, descriptions, quantities, prices, tax_rates)
+        if acc or desc or qty or price
+    ]
+    try:
+        partner_id = int(str(form.get("partner_id", "")) or 0)
+        invoice_date = date.fromisoformat(str(form.get("invoice_date", "")))
+        lines = [
+            LineDraft(
+                account_id=int(row["account_id"] or 0),
+                description=row["description"],
+                quantity=parse_decimal(row["quantity"], "الكمية"),
+                unit_price=parse_decimal(row["unit_price"], "السعر"),
+                tax_rate=parse_decimal(row["tax_rate"] or "0", "الضريبة"),
+            )
+            for row in rows
+        ]
+        invoice = create_draft(
+            session,
+            company_id=user.company_id,
+            user_id=user.id,
+            kind=invoice_kind,
+            partner_id=partner_id,
+            invoice_date=invoice_date,
+            lines=lines,
+        )
+        session.commit()
+        return RedirectResponse(f"/invoices/{invoice.id}", status_code=303)
+    except (InvoiceError, ValueError) as exc:
+        session.rollback()
+        message = str(exc) if isinstance(exc, InvoiceError) else "بيانات الفاتورة غير صحيحة."
+        return _render(
+            request,
+            "invoice_form.html",
+            **_invoice_form_context(
+                session,
+                user,
+                invoice_kind,
+                error=message,
+                rows=rows,
+                partner_id=str(form.get("partner_id", "")),
+                invoice_date=str(form.get("invoice_date", "")),
+            ),
+        )
+
+
+@app.get("/invoices/{invoice_id}", response_class=HTMLResponse)
+def invoice_detail(
+    invoice_id: int,
+    request: Request,
+    posted: str = Query(""),
+    error: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    invoice = session.scalar(select(Invoice).where(Invoice.id == invoice_id, Invoice.company_id == user.company_id))
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="الفاتورة غير موجودة.")
+    entry = session.get(JournalEntry, invoice.journal_entry_id) if invoice.journal_entry_id else None
+    return _render(
+        request,
+        "invoice_detail.html",
+        user=user,
+        invoice=invoice,
+        kind_labels=KIND_LABELS_AR,
+        status_labels=STATUS_LABELS_AR,
+        entry=entry,
+        posted=posted,
+        error=error,
+        is_draft=invoice.status == InvoiceStatus.DRAFT,
+    )
+
+
+@app.post("/invoices/{invoice_id}/post")
+def invoice_post(
+    invoice_id: int,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    try:
+        post_invoice(session, company_id=user.company_id, user_id=user.id, invoice_id=invoice_id)
+        session.commit()
+    except (InvoiceError, PostingError) as exc:
+        session.rollback()
+        return RedirectResponse(f"/invoices/{invoice_id}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(f"/invoices/{invoice_id}?posted=1", status_code=303)
+
+
+@app.post("/invoices/{invoice_id}/delete")
+def invoice_delete_draft(
+    invoice_id: int,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    invoice = session.scalar(select(Invoice).where(Invoice.id == invoice_id, Invoice.company_id == user.company_id))
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="الفاتورة غير موجودة.")
+    if invoice.status != InvoiceStatus.DRAFT:
+        return RedirectResponse(f"/invoices/{invoice_id}?error={quote('لا يمكن حذف فاتورة مرحّلة.')}", status_code=303)
+    kind = invoice.kind.value
+    session.delete(invoice)
+    session.commit()
+    return RedirectResponse(f"/invoices?kind={kind}", status_code=303)

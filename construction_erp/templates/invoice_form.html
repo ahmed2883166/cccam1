@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{{ kind_labels[kind] }} جديدة{% endblock %}
+{% block content %}
+<h2>{{ kind_labels[kind] }} جديدة</h2>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+{% if not partners %}
+  <div class="card bad">
+    لا يوجد {{ "عملاء" if kind.value == "sales" else "موردون" }} نشطون. <a href="/partners?kind={{ 'customer' if kind.value == 'sales' else 'supplier' }}">أضف طرف أولًا</a>.
+  </div>
+{% endif %}
+
+<form method="post" action="/invoices/new" class="card" style="display:grid;gap:12px">
+  <input type="hidden" name="kind" value="{{ kind.value }}">
+  <div class="form-grid">
+    <label>{{ "العميل" if kind.value == "sales" else "المورد" }}
+      <select name="partner_id" required>
+        <option value="">— اختر —</option>
+        {% for p in partners %}
+          <option value="{{ p.id }}" {% if partner_id == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>التاريخ
+      <input type="date" name="invoice_date" value="{{ invoice_date }}" required>
+    </label>
+  </div>
+
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr>
+        <th>{{ "الإيراد" if kind.value == "sales" else "الحساب (مصروف أو مخزون)" }}</th>
+        <th>الوصف</th>
+        <th class="num">الكمية</th>
+        <th class="num">السعر</th>
+        <th class="num">الضريبة</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% set lines = rows if rows else [none, none, none, none] %}
+    {% for r in lines %}
+      <tr>
+        <td>
+          <select name="account_id">
+            <option value="">— اختر —</option>
+            {% for a in accounts %}
+              <option value="{{ a.id }}" {% if r and r.account_id|string == a.id|string %}selected{% endif %}>{{ a.code }} - {{ a.name_ar }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td><input name="description" value="{{ r.description if r else '' }}" maxlength="300" style="width:100%"></td>
+        <td><input class="num" name="quantity" inputmode="decimal" value="{{ r.quantity if r else '' }}" style="width:90px"></td>
+        <td><input class="num" name="unit_price" inputmode="decimal" value="{{ r.unit_price if r else '' }}" style="width:110px"></td>
+        <td>
+          <select name="tax_rate">
+            <option value="15" {% if not r or r.tax_rate|string in ['15', '15.00'] %}selected{% endif %}>15%</option>
+            <option value="0" {% if r and r.tax_rate|string in ['0', '0.00'] %}selected{% endif %}>0%</option>
+          </select>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <p class="muted small">
+    {% if kind.value == "sales" %}
+      عند الترحيل: مدين العملاء بالإجمالي، ودائن حسابات الإيراد بالصافي، ودائن ضريبة المخرجات.
+    {% else %}
+      عند الترحيل: مدين حسابات المصروف أو المخزون بالصافي، ومدين ضريبة المدخلات، ودائن الموردين بالإجمالي.
+    {% endif %}
+    الفاتورة بتتحفظ كمسودة، والترحيل خطوة منفصلة.
+  </p>
+  <div><button {{ 'disabled' if not partners }}>حفظ كمسودة</button> <a href="/invoices?kind={{ kind.value }}">إلغاء</a></div>
+</form>
+{% endblock %}

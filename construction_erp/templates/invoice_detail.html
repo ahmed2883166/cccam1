@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ kind_labels[invoice.kind] }}{% endblock %}
+{% block content %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+  <h2 style="margin:0;margin-inline-end:auto">
+    {{ kind_labels[invoice.kind] }} {{ "رقم " ~ invoice.number if invoice.number else "(مسودة)" }}
+  </h2>
+  <span class="badge {{ 'good' if not is_draft else 'muted' }}">{{ status_labels[invoice.status] }}</span>
+</div>
+
+{% if posted %}<div class="card good">تم ترحيل الفاتورة وإنشاء القيد.</div>{% endif %}
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<div class="card form-grid">
+  <div><div class="muted small">{{ "العميل" if invoice.kind.value == "sales" else "المورد" }}</div>{{ invoice.partner.name }}</div>
+  <div><div class="muted small">التاريخ</div>{{ invoice.invoice_date }}</div>
+  {% if entry %}
+  <div><div class="muted small">القيد المحاسبي</div>قيد رقم {{ entry.number }}</div>
+  {% endif %}
+</div>
+
+<div class="card" style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr><th>الحساب</th><th>الوصف</th><th class="num">الكمية</th><th class="num">السعر</th><th class="num">الصافي</th><th class="num">الضريبة</th><th class="num">الإجمالي</th></tr>
+    </thead>
+    <tbody>
+    {% for l in invoice.lines %}
+      <tr>
+        <td>{{ l.account.code }} - {{ l.account.name_ar }}</td>
+        <td>{{ l.description }}</td>
+        <td class="num">{{ "{:,.3f}".format(l.quantity) }}</td>
+        <td class="num">{{ "{:,.2f}".format(l.unit_price) }}</td>
+        <td class="num">{{ "{:,.2f}".format(l.net) }}</td>
+        <td class="num">{{ "{:,.2f}".format(l.tax) }} <span class="muted small">({{ "%g"|format(l.tax_rate) }}%)</span></td>
+        <td class="num">{{ "{:,.2f}".format(l.total) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr><th colspan="4"></th><th class="num">{{ "{:,.2f}".format(invoice.subtotal) }}</th><th class="num">{{ "{:,.2f}".format(invoice.tax_total) }}</th><th class="num">{{ "{:,.2f}".format(invoice.total) }}</th></tr>
+    </tfoot>
+  </table>
+</div>
+
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+  {% if is_draft %}
+    <form method="post" action="/invoices/{{ invoice.id }}/post" style="margin:0">
+      <button>ترحيل الفاتورة</button>
+    </form>
+    <form method="post" action="/invoices/{{ invoice.id }}/delete" style="margin:0">
+      <button style="background:transparent;color:var(--bad);border:1px solid var(--line)">حذف المسودة</button>
+    </form>
+  {% else %}
+    <p class="muted small">الفاتورة المرحّلة مش بتتعدل. أي تصحيح يتم بقيد عكسي (ميزة قادمة).</p>
+  {% endif %}
+  <a href="/invoices?kind={{ invoice.kind.value }}">رجوع للقائمة</a>
+</div>
+{% endblock %}

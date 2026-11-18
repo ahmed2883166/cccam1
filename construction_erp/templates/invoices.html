@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ kind_labels[kind] }}ات{% endblock %}
+{% block content %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+  <h2 style="margin:0;margin-inline-end:auto">{{ "المبيعات" if kind.value == "sales" else "المشتريات" }}</h2>
+  <a class="btn" href="/invoices/new?kind={{ kind.value }}">+ فاتورة جديدة</a>
+</div>
+
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+  {% for k in kinds %}
+    <a class="tab {{ 'active' if kind == k }}" href="/invoices?kind={{ k.value }}">{{ "المبيعات" if k.value == "sales" else "المشتريات" }}</a>
+  {% endfor %}
+</div>
+
+{% if created %}<div class="card good">تم حفظ الفاتورة.</div>{% endif %}
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <table>
+    <thead>
+      <tr><th class="num">الرقم</th><th>التاريخ</th><th>{{ "العميل" if kind.value == "sales" else "المورد" }}</th><th class="num">الإجمالي</th><th>الحالة</th></tr>
+    </thead>
+    <tbody>
+    {% for inv in invoices %}
+      <tr>
+        <td class="num"><a href="/invoices/{{ inv.id }}">{{ inv.number or "مسودة #" ~ inv.id }}</a></td>
+        <td class="num">{{ inv.invoice_date }}</td>
+        <td>{{ inv.partner.name }}</td>
+        <td class="num">{{ "{:,.2f}".format(inv.total) }}</td>
+        <td><span class="badge {{ 'good' if inv.status.value == 'posted' else 'muted' }}">{{ status_labels[inv.status] }}</span></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">لا توجد فواتير بعد.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}العملاء والموردين{% endblock %}
+{% block content %}
+<h2>العملاء والموردين</h2>
+
+{% if created %}<div class="card good">تم حفظ الطرف.</div>{% endif %}
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+  <a class="tab {{ 'active' if not kind }}" href="/partners">الكل</a>
+  {% for k in kinds %}
+    <a class="tab {{ 'active' if kind == k.value }}" href="/partners?kind={{ k.value }}">{{ kind_labels[k] }}ين</a>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <table>
+    <thead><tr><th>الاسم</th><th>النوع</th><th>الرقم الضريبي</th><th>الهاتف</th></tr></thead>
+    <tbody>
+    {% for p in partners %}
+      <tr>
+        <td>{{ p.name }}</td>
+        <td><span class="badge">{{ kind_labels[p.kind] }}</span></td>
+        <td class="num">{{ p.tax_number or "—" }}</td>
+        <td class="num">{{ p.phone or "—" }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">لا يوجد أطراف بعد.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<form method="post" action="/partners/new" class="card form-grid">
+  <h3 style="grid-column:1/-1;margin:0">طرف جديد</h3>
+  <label>النوع
+    <select name="kind" required>
+      {% for k in kinds %}<option value="{{ k.value }}">{{ kind_labels[k] }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>الاسم
+    <input name="name" required>
+  </label>
+  <label>الرقم الضريبي
+    <input name="tax_number" dir="ltr" inputmode="numeric">
+  </label>
+  <label>الهاتف
+    <input name="phone" dir="ltr" inputmode="tel">
+  </label>
+  <div style="grid-column:1/-1"><button>حفظ</button></div>
+</form>
+{% endblock %}
