@@ -46,6 +46,8 @@ from .models import (
     Payment,
     PaymentKind,
     PaymentMethod,
+    Project,
+    ProgressCertificate,
     User,
 )
 from .payments import (
@@ -59,6 +61,7 @@ from .payments import (
     record_payment,
 )
 from .reports import AGING_BUCKETS, aging_report, aging_totals, vat_summary
+from .progress import ProgressError, certify_progress, create_project, project_summary
 from .security import verify_password
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -963,3 +966,106 @@ def vat_page(
         end=end_d.isoformat(),
         error=error,
     )
+
+
+@app.get("/projects", response_class=HTMLResponse)
+def projects_list(
+    request: Request,
+    error: str = Query(""),
+    created: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    projects = session.scalars(
+        select(Project).where(Project.company_id == user.company_id).order_by(Project.code)
+    ).all()
+    rows = [(p, project_summary(session, p)) for p in projects]
+    return _render(
+        request,
+        "projects.html",
+        user=user,
+        rows=rows,
+        clients=_active_partners(session, user, InvoiceKind.SALES),
+        error=error,
+        created=created,
+    )
+
+
+@app.post("/projects/new")
+async def project_create(
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    form = await request.form()
+    try:
+        project = create_project(
+            session,
+            company_id=user.company_id,
+            code=str(form.get("code", "")),
+            name=str(form.get("name", "")),
+            client_id=int(str(form.get("client_id", "0")) or 0),
+            contract_value=parse_decimal(str(form.get("contract_value", "")), "قيمة العقد"),
+            retention_rate=parse_decimal(str(form.get("retention_rate", "5")), "نسبة المحتجز"),
+        )
+        session.commit()
+    except (ProgressError, InvoiceError, ValueError) as exc:
+        session.rollback()
+        return RedirectResponse(f"/projects?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(f"/projects/{project.id}", status_code=303)
+
+
+@app.get("/projects/{project_id}", response_class=HTMLResponse)
+def project_detail(
+    project_id: int,
+    request: Request,
+    posted: str = Query(""),
+    error: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    project = session.scalar(select(Project).where(Project.id == project_id, Project.company_id == user.company_id))
+    if project is None:
+        raise HTTPException(status_code=404, detail="المشروع غير موجود.")
+    certificates = session.scalars(
+        select(ProgressCertificate)
+        .where(ProgressCertificate.project_id == project.id)
+        .order_by(ProgressCertificate.number)
+    ).all()
+    return _render(
+        request,
+        "project_detail.html",
+        user=user,
+        project=project,
+        summary=project_summary(session, project),
+        certificates=certificates,
+        posted=posted,
+        error=error,
+        today=date.today().isoformat(),
+    )
+
+
+@app.post("/projects/{project_id}/certify")
+async def project_certify(
+    project_id: int,
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    form = await request.form()
+    try:
+        cert_date = date.fromisoformat(str(form.get("cert_date", "")).strip())
+        cumulative = parse_decimal(str(form.get("cumulative_value", "")), "الإنجاز التراكمي")
+        certificate = certify_progress(
+            session,
+            company_id=user.company_id,
+            user_id=user.id,
+            project_id=project_id,
+            cert_date=cert_date,
+            cumulative_value=cumulative,
+        )
+        session.commit()
+    except (ProgressError, PostingError, InvoiceError, ValueError) as exc:
+        session.rollback()
+        return RedirectResponse(f"/projects/{project_id}?error={quote(str(exc))}", status_code=303)
+    return RedirectResponse(f"/projects/{project_id}?posted={certificate.number}", status_code=303)

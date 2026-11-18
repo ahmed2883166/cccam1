@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}المشروعات{% endblock %}
+{% block content %}
+<h2>المشروعات</h2>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <table>
+    <thead><tr><th>الكود</th><th>المشروع</th><th>العميل</th><th class="num">قيمة العقد</th><th class="num">المنجز</th><th class="num">المحتجز</th><th class="num">المتبقي</th></tr></thead>
+    <tbody>
+    {% for p, s in rows %}
+      <tr>
+        <td><a href="/projects/{{ p.id }}">{{ p.code }}</a></td>
+        <td>{{ p.name }}</td>
+        <td>{{ p.client.name }}</td>
+        <td class="num">{{ "{:,.2f}".format(s.contract_value) }}</td>
+        <td class="num">{{ "{:,.2f}".format(s.certified_to_date) }}</td>
+        <td class="num">{{ "{:,.2f}".format(s.retention_held) }}</td>
+        <td class="num">{{ "{:,.2f}".format(s.remaining) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">لا توجد مشروعات بعد.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h3 style="margin-top:0">مشروع جديد</h3>
+  <form method="post" action="/projects/new" class="form-grid">
+    <label>الكود <input name="code" required></label>
+    <label>اسم المشروع <input name="name" required></label>
+    <label>العميل
+      <select name="client_id" required>
+        {% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>قيمة العقد <input name="contract_value" inputmode="decimal" required></label>
+    <label>نسبة المحتجز % <input name="retention_rate" inputmode="decimal" value="5" required></label>
+    <div><button>حفظ المشروع</button></div>
+  </form>
+</div>
+{% endblock %}

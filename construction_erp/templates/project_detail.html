@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }}{% endblock %}
+{% block content %}
+<h2>{{ project.code }} - {{ project.name }}</h2>
+<p class="muted small">العميل: {{ project.client.name }} · نسبة المحتجز {{ "%g"|format(project.retention_rate) }}%</p>
+
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+{% if posted %}<div class="card good">تم ترحيل المستخلص رقم {{ posted }}.</div>{% endif %}
+
+<div class="card form-grid">
+  <div><div class="muted small">قيمة العقد</div><strong>{{ "{:,.2f}".format(summary.contract_value) }}</strong></div>
+  <div><div class="muted small">المنجز المعتمد</div>{{ "{:,.2f}".format(summary.certified_to_date) }}</div>
+  <div><div class="muted small">المحتجز لدى العميل</div>{{ "{:,.2f}".format(summary.retention_held) }}</div>
+  <div><div class="muted small">المتبقي من العقد</div>{{ "{:,.2f}".format(summary.remaining) }}</div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h3 style="margin-top:0">مستخلص جديد</h3>
+  <p class="muted small">أدخل الإنجاز التراكمي حتى تاريخ المستخلص. المبلغ المستحق = الفرق عن آخر مستخلص، + ضريبة 15%، - المحتجز.</p>
+  <form method="post" action="/projects/{{ project.id }}/certify" class="form-grid">
+    <label>تاريخ المستخلص <input type="date" name="cert_date" value="{{ today }}" required></label>
+    <label>الإنجاز التراكمي <input name="cumulative_value" inputmode="decimal" required></label>
+    <div><button>ترحيل المستخلص</button></div>
+  </form>
+</div>
+
+<div class="card" style="margin-top:16px;overflow-x:auto">
+  <h3 style="margin-top:0">المستخلصات</h3>
+  <table>
+    <thead><tr><th>الرقم</th><th>التاريخ</th><th class="num">التراكمي</th><th class="num">الصافي</th><th class="num">الضريبة</th><th class="num">المحتجز</th><th class="num">المستحق</th></tr></thead>
+    <tbody>
+    {% for c in certificates %}
+      <tr>
+        <td>{{ c.number }}</td>
+        <td>{{ c.cert_date }}</td>
+        <td class="num">{{ "{:,.2f}".format(c.cumulative_value) }}</td>
+        <td class="num">{{ "{:,.2f}".format(c.net) }}</td>
+        <td class="num">{{ "{:,.2f}".format(c.tax) }}</td>
+        <td class="num">{{ "{:,.2f}".format(c.retention) }}</td>
+        <td class="num">{{ "{:,.2f}".format(c.amount_due) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">لا توجد مستخلصات بعد.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<a href="/projects" style="display:inline-block;margin-top:12px">رجوع للمشروعات</a>
+{% endblock %}

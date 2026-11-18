@@ -232,3 +232,49 @@ class PaymentAllocation(Base):
 
     payment: Mapped[Payment] = relationship(back_populates="allocations")
     invoice: Mapped[Invoice] = relationship()
+
+
+class Project(Base):
+    """A construction contract with a client."""
+
+    __tablename__ = "projects"
+    __table_args__ = (UniqueConstraint("company_id", "code", name="uq_project_code"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    code: Mapped[str] = mapped_column(String(20))
+    name: Mapped[str] = mapped_column(String(200))
+    client_id: Mapped[int] = mapped_column(ForeignKey("partners.id"))
+    contract_value: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    retention_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("5"))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    client: Mapped[Partner] = relationship()
+    certificates: Mapped[list["ProgressCertificate"]] = relationship(
+        back_populates="project", order_by="ProgressCertificate.number"
+    )
+
+
+class ProgressCertificate(Base):
+    """A progress billing (مستخلص) certified against a project."""
+
+    __tablename__ = "progress_certificates"
+    __table_args__ = (UniqueConstraint("company_id", "number", name="uq_certificate_number"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    number: Mapped[int] = mapped_column()
+    cert_date: Mapped[date] = mapped_column(Date, index=True)
+    cumulative_value: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    previous_value: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    net: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    tax: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    retention: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    amount_due: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"), nullable=True)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    project: Mapped[Project] = relationship(back_populates="certificates")
