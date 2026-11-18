@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ labels[kind] }}ات{% endblock %}
+{% block content %}
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+  <h2 style="margin:0;margin-inline-end:auto">{{ "التحصيل من العملاء" if kind.value == "receipt" else "السداد للموردين" }}</h2>
+  <a class="btn" href="/payments/new?kind={{ kind.value }}">+ {{ labels[kind] }} جديد</a>
+</div>
+
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+  {% for k in kinds %}
+    <a class="tab {{ 'active' if kind == k }}" href="/payments?kind={{ k.value }}">{{ "التحصيل" if k.value == "receipt" else "السداد" }}</a>
+  {% endfor %}
+</div>
+
+{% if created %}<div class="card good">تم حفظ السند وترحيله.</div>{% endif %}
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <table>
+    <thead>
+      <tr><th class="num">الرقم</th><th>التاريخ</th><th>الطرف</th><th>الوسيلة</th><th class="num">المبلغ</th></tr>
+    </thead>
+    <tbody>
+    {% for p in payments %}
+      <tr>
+        <td class="num"><a href="/payments/{{ p.id }}">{{ labels[p.kind] }} {{ p.number }}</a></td>
+        <td class="num">{{ p.payment_date }}</td>
+        <td>{{ p.partner.name }}</td>
+        <td>{{ method_labels[p.method] }}</td>
+        <td class="num">{{ "{:,.2f}".format(p.amount) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">لا توجد سندات بعد.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

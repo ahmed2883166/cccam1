@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ label }} جديد{% endblock %}
+{% block content %}
+<h2>{{ label }} جديد</h2>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+{% if not partners %}
+  <div class="card bad">
+    لا يوجد {{ "عملاء" if kind.value == "receipt" else "موردون" }} نشطون.
+    <a href="/partners?kind={{ 'customer' if kind.value == 'receipt' else 'supplier' }}">أضف طرف أولًا</a>.
+  </div>
+{% endif %}
+
+<form method="post" action="/payments/new" class="card" style="display:grid;gap:12px">
+  <input type="hidden" name="kind" value="{{ kind.value }}">
+
+  <div class="form-grid">
+    <label>{{ "العميل" if kind.value == "receipt" else "المورد" }}
+      <select name="partner_id" required
+              hx-get="/payments/open-invoices" hx-target="#open-invoices" hx-swap="innerHTML"
+              hx-include="[name=kind]" hx-trigger="change">
+        <option value="">— اختر —</option>
+        {% for p in partners %}
+          <option value="{{ p.id }}" {% if partner_id == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>التاريخ
+      <input type="date" name="payment_date" value="{{ payment_date }}" required>
+    </label>
+    <label>الوسيلة
+      <select name="method" required>
+        {% for m in methods %}
+          <option value="{{ m.value }}" {% if method_value == m.value %}selected{% endif %}>{{ method_labels[m] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>إجمالي المبلغ
+      <input class="num" name="amount" inputmode="decimal" value="{{ amount or '' }}" required>
+    </label>
+  </div>
+
+  <div>
+    <strong>الفواتير المفتوحة</strong>
+    <div id="open-invoices" style="margin-top:8px">
+      {% include "_open_invoices.html" %}
+    </div>
+  </div>
+
+  <p class="muted small">
+    مجموع مبالغ التسوية لازم يساوي إجمالي المبلغ. ما فيش دفعات مقدمة بعد، فكل جنيه لازم يتسوّى على فاتورة.
+  </p>
+  <div><button>حفظ وترحيل {{ label }}</button> <a href="/payments?kind={{ kind.value }}">إلغاء</a></div>
+</form>
+{% endblock %}

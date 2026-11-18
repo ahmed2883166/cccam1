@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ labels[payment.kind] }} {{ payment.number }}{% endblock %}
+{% block content %}
+<h2>{{ labels[payment.kind] }} رقم {{ payment.number }}</h2>
+
+<div class="card form-grid">
+  <div><div class="muted small">{{ "العميل" if payment.kind.value == "receipt" else "المورد" }}</div>{{ payment.partner.name }}</div>
+  <div><div class="muted small">التاريخ</div>{{ payment.payment_date }}</div>
+  <div><div class="muted small">الوسيلة</div>{{ method_labels[payment.method] }}</div>
+  <div><div class="muted small">المبلغ</div><strong>{{ "{:,.2f}".format(payment.amount) }}</strong></div>
+  {% if entry %}<div><div class="muted small">القيد المحاسبي</div>قيد رقم {{ entry.number }}</div>{% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">التسويات</h3>
+  <table>
+    <thead><tr><th>الفاتورة</th><th class="num">إجمالي الفاتورة</th><th class="num">مبلغ التسوية</th></tr></thead>
+    <tbody>
+    {% for a in payment.allocations %}
+      <tr>
+        <td><a href="/invoices/{{ a.invoice.id }}">{{ "فاتورة " ~ a.invoice.number if a.invoice.number else "فاتورة #" ~ a.invoice.id }}</a></td>
+        <td class="num">{{ "{:,.2f}".format(a.invoice.total) }}</td>
+        <td class="num">{{ "{:,.2f}".format(a.amount) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<a href="/payments?kind={{ payment.kind.value }}">رجوع للقائمة</a>
+{% endblock %}

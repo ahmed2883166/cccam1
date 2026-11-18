@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}الأرصدة{% endblock %}
+{% block content %}
+<h2>أرصدة العملاء والموردين</h2>
+<p class="muted small">الفواتير المرحّلة اللي لسه ما اتسوّتش بالكامل، مجمّعة حسب الطرف.</p>
+
+{% for s in sections %}
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <h3 style="margin:0">{{ s.title }}</h3>
+    <strong class="num">{{ "{:,.2f}".format(s.grand_total) }}</strong>
+  </div>
+  {% for g in s.groups %}
+    <div style="margin-top:12px">
+      <div style="display:flex;justify-content:space-between">
+        <strong>{{ g.name }}</strong>
+        <span class="num">{{ "{:,.2f}".format(g.total) }}</span>
+      </div>
+      <table>
+        <tbody>
+        {% for item in g.invoices %}
+          <tr>
+            <td><a href="/invoices/{{ item.invoice.id }}">{{ "فاتورة " ~ item.invoice.number }}</a></td>
+            <td class="num">{{ item.invoice.invoice_date }}</td>
+            <td class="num">{{ "{:,.2f}".format(item.outstanding) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">لا توجد أرصدة مفتوحة.</p>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endblock %}

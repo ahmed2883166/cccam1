@@ -41,7 +41,17 @@ from .models import (
     JournalLine,
     Partner,
     PartnerKind,
+    Payment,
+    PaymentKind,
+    PaymentMethod,
     User,
+)
+from .payments import (
+    METHOD_LABELS_AR,
+    PAYMENT_LABELS_AR,
+    PaymentError,
+    open_invoices,
+    record_payment,
 )
 from .security import verify_password
 
@@ -600,3 +610,182 @@ def invoice_delete_draft(
     session.delete(invoice)
     session.commit()
     return RedirectResponse(f"/invoices?kind={kind}", status_code=303)
+
+
+# ---------- Collections and disbursements ----------
+
+def _payment_form_context(session: Session, user: User, kind: PaymentKind, partner_id: int | None, **extra) -> dict:
+    partner_kind = PartnerKind.CUSTOMER if kind == PaymentKind.RECEIPT else PartnerKind.SUPPLIER
+    partners = session.scalars(
+        select(Partner)
+        .where(Partner.company_id == user.company_id, Partner.kind == partner_kind, Partner.is_active.is_(True))
+        .order_by(Partner.name)
+    ).all()
+    context = dict(
+        user=user,
+        kind=kind,
+        partners=partners,
+        partner_id=str(partner_id or ""),
+        items=open_invoices(session, user.company_id, kind, partner_id) if partner_id else [],
+        method_labels=METHOD_LABELS_AR,
+        methods=list(PaymentMethod),
+        payment_date=date.today().isoformat(),
+        label=PAYMENT_LABELS_AR[kind],
+        error=None,
+        form={},
+    )
+    context.update(extra)
+    return context
+
+
+@app.get("/payments", response_class=HTMLResponse)
+def payments_list(
+    request: Request,
+    kind: str = Query("receipt"),
+    created: str = Query(""),
+    error: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    payment_kind = _parse_kind(kind, PaymentKind)
+    rows = session.scalars(
+        select(Payment)
+        .where(Payment.company_id == user.company_id, Payment.kind == payment_kind)
+        .order_by(Payment.payment_date.desc(), Payment.id.desc())
+    ).all()
+    return _render(
+        request,
+        "payments.html",
+        user=user,
+        kind=payment_kind,
+        kinds=list(PaymentKind),
+        labels=PAYMENT_LABELS_AR,
+        method_labels=METHOD_LABELS_AR,
+        payments=rows,
+        created=created,
+        error=error,
+    )
+
+
+@app.get("/payments/new", response_class=HTMLResponse)
+def payment_new_form(
+    request: Request,
+    kind: str = Query("receipt"),
+    partner_id: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    payment_kind = _parse_kind(kind, PaymentKind)
+    pid = int(partner_id) if partner_id.isdigit() else None
+    return _render(request, "payment_form.html", **_payment_form_context(session, user, payment_kind, pid))
+
+
+@app.get("/payments/open-invoices", response_class=HTMLResponse)
+def payment_open_invoices(
+    request: Request,
+    kind: str = Query("receipt"),
+    partner_id: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    payment_kind = _parse_kind(kind, PaymentKind)
+    pid = int(partner_id) if partner_id.isdigit() else None
+    context = _payment_form_context(session, user, payment_kind, pid)
+    return _render(request, "_open_invoices.html", **{k: context[k] for k in ("items", "kind", "user")})
+
+
+@app.post("/payments/new", response_class=HTMLResponse)
+async def payment_create(
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    form = await request.form()
+    payment_kind = _parse_kind(str(form.get("kind", "receipt")), PaymentKind)
+    partner_raw = str(form.get("partner_id", ""))
+    try:
+        partner_id = int(partner_raw)
+        payment_date = date.fromisoformat(str(form.get("payment_date", "")))
+        method = _parse_kind(str(form.get("method", "")), PaymentMethod)
+        amount = parse_decimal(str(form.get("amount", "")), "المبلغ").quantize(Decimal("0.01"))
+        invoice_ids = form.getlist("invoice_id")
+        allocs = form.getlist("alloc")
+        allocations = []
+        for inv_id, raw in zip(invoice_ids, allocs):
+            raw = (raw or "").strip()
+            if not raw:
+                continue
+            value = parse_decimal(raw, "مبلغ التسوية").quantize(Decimal("0.01"))
+            allocations.append((int(inv_id), value))
+        payment = record_payment(
+            session,
+            company_id=user.company_id,
+            user_id=user.id,
+            kind=payment_kind,
+            partner_id=partner_id,
+            payment_date=payment_date,
+            method=method,
+            amount=amount,
+            allocations=allocations,
+        )
+        session.commit()
+        return RedirectResponse(f"/payments/{payment.id}", status_code=303)
+    except (PaymentError, InvoiceError, ValueError) as exc:
+        session.rollback()
+        message = str(exc) if isinstance(exc, (PaymentError, InvoiceError)) else "بيانات السند غير صحيحة."
+        pid = int(partner_raw) if partner_raw.isdigit() else None
+        return _render(
+            request,
+            "payment_form.html",
+            **_payment_form_context(
+                session,
+                user,
+                payment_kind,
+                pid,
+                error=message,
+                payment_date=str(form.get("payment_date", "")),
+                amount=str(form.get("amount", "")),
+                method_value=str(form.get("method", "")),
+            ),
+        )
+
+
+@app.get("/payments/{payment_id}", response_class=HTMLResponse)
+def payment_detail(
+    payment_id: int,
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    payment = session.scalar(select(Payment).where(Payment.id == payment_id, Payment.company_id == user.company_id))
+    if payment is None:
+        raise HTTPException(status_code=404, detail="السند غير موجود.")
+    entry = session.get(JournalEntry, payment.journal_entry_id) if payment.journal_entry_id else None
+    return _render(
+        request,
+        "payment_detail.html",
+        user=user,
+        payment=payment,
+        labels=PAYMENT_LABELS_AR,
+        method_labels=METHOD_LABELS_AR,
+        entry=entry,
+    )
+
+
+@app.get("/balances", response_class=HTMLResponse)
+def balances(request: Request, user: User = Depends(require_user), session: Session = Depends(get_session)):
+    sections = []
+    for kind, title in ((PaymentKind.RECEIPT, "أرصدة العملاء (المستحق لنا)"), (PaymentKind.PAYMENT, "أرصدة الموردين (المستحق علينا)")):
+        items = open_invoices(session, user.company_id, kind)
+        by_partner: dict[str, dict] = {}
+        for item in items:
+            group = by_partner.setdefault(
+                item.invoice.partner.name, {"name": item.invoice.partner.name, "invoices": [], "total": Decimal("0")}
+            )
+            group["invoices"].append(item)
+            group["total"] += item.outstanding
+        sections.append(
+            dict(title=title, groups=sorted(by_partner.values(), key=lambda g: g["name"]),
+                 grand_total=sum((g["total"] for g in by_partner.values()), Decimal("0")))
+        )
+    return _render(request, "balances.html", user=user, sections=sections, kind_labels=KIND_LABELS_AR)
