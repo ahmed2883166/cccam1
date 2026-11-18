@@ -26,7 +26,7 @@ alembic upgrade head                 # تطبيق الهجرات
 alembic revision --autogenerate -m "وصف التغيير"   # إنشاء هجرة جديدة بعد تعديل النماذج
 ```
 
-الهجرة الأولى (`initial schema`) مولّدة من النماذج الحالية. ومتجربتش على PostgreSQL بعد، بس اتجربت على SQLite (upgrade وdowngrade وcheck).
+الهجرة الأولى (`initial schema`) مولّدة من النماذج الحالية. اتجربت على PostgreSQL 16 (upgrade وdowngrade وcheck والـ seed والـ smoke test للويب)، وكمان على SQLite للاختبارات.
 
 ## التشغيل بـ Docker
 
