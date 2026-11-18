@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}قيد يومية{% endblock %}
+{% block content %}
+<h2>قيد يومية جديد</h2>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+{% if request.query_params.get("saved") %}<div class="card good">تم حفظ القيد رقم {{ request.query_params.get("saved") }}.</div>{% endif %}
+<form method="post" action="/journal" class="card" style="display:grid;gap:12px">
+  <div class="grid">
+    <label>التاريخ <input type="date" name="entry_date" value="{{ today }}" required></label>
+    <label>البيان <input name="description" required maxlength="500"></label>
+  </div>
+  <table>
+    <thead><tr><th>الحساب</th><th class="num">مدين</th><th class="num">دائن</th></tr></thead>
+    <tbody>
+    {% for i in range(4) %}
+      <tr>
+        <td>
+          <select name="account_id">
+            <option value="">— اختر —</option>
+            {% for a in accounts %}<option value="{{ a.id }}">{{ a.code }} - {{ a.name_ar }}</option>{% endfor %}
+          </select>
+        </td>
+        <td><input class="num" name="debit" inputmode="decimal" value=""></td>
+        <td><input class="num" name="credit" inputmode="decimal" value=""></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">كل سطر إما مدين أو دائن. لازم مجموع المدين = مجموع الدائن، وإلا القيد مش هيتحفظ.</p>
+  <div><button>حفظ القيد</button></div>
+</form>
+{% endblock %}

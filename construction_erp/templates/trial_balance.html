@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}ميزان المراجعة{% endblock %}
+{% block content %}
+<h2>ميزان المراجعة</h2>
+<div class="card">
+  <table>
+    <thead>
+      <tr><th class="num">الكود</th><th>الحساب</th><th class="num">مدين</th><th class="num">دائن</th></tr>
+    </thead>
+    <tbody>
+    {% for code, name, type, debit, credit in rows %}
+      {% if debit or credit %}
+      <tr>
+        <td class="num">{{ code }}</td>
+        <td>{{ name }}</td>
+        <td class="num">{{ "{:,.2f}".format(debit) }}</td>
+        <td class="num">{{ "{:,.2f}".format(credit) }}</td>
+      </tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <th colspan="2">الإجمالي</th>
+        <th class="num">{{ "{:,.2f}".format(total_debit) }}</th>
+        <th class="num">{{ "{:,.2f}".format(total_credit) }}</th>
+      </tr>
+    </tfoot>
+  </table>
+  <p class="{{ 'good' if balanced else 'bad' }}">{{ "الميزان متوازن" if balanced else "الميزان غير متوازن!" }}</p>
+</div>
+{% endblock %}

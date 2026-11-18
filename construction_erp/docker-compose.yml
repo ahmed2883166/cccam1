@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: cerp
+      POSTGRES_PASSWORD: cerp
+      POSTGRES_DB: cerp
+    volumes:
+      - cerp_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cerp -d cerp"]
+      interval: 5s
+      retries: 10
+
+  web:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      CERP_DATABASE_URL: postgresql+psycopg://cerp:cerp@db:5432/cerp
+      CERP_SECRET_KEY: ${CERP_SECRET_KEY:?set CERP_SECRET_KEY in .env}
+    ports:
+      - "8000:8000"
+
+volumes:
+  cerp_pgdata:

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}الرئيسية{% endblock %}
+{% block content %}
+<h2>لوحة المؤشرات</h2>
+<div class="grid">
+  <div class="card"><div class="muted">إجمالي المدين</div><div class="kpi num">{{ "{:,.2f}".format(total_debit) }}</div></div>
+  <div class="card"><div class="muted">إجمالي الدائن</div><div class="kpi num">{{ "{:,.2f}".format(total_credit) }}</div></div>
+  <div class="card"><div class="muted">عدد الحسابات</div><div class="kpi num">{{ account_count }}</div></div>
+  <div class="card">
+    <div class="muted">حالة الميزان</div>
+    {% if total_debit == total_credit %}
+      <div class="kpi good">متوازن</div>
+    {% else %}
+      <div class="kpi bad">غير متوازن</div>
+    {% endif %}
+  </div>
+</div>
+<p class="muted">المؤشرات الأوسع (المشروعات، المستخلصات، التدفقات) تأتي في المراحل التالية.</p>
+{% endblock %}

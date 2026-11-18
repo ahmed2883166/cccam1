@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}شجرة الحسابات{% endblock %}
+{% block content %}
+<h2>شجرة الحسابات</h2>
+<div class="card">
+  <table>
+    <thead><tr><th class="num">الكود</th><th>الاسم</th><th>النوع</th><th>قابل للقيد</th></tr></thead>
+    <tbody>
+    {% for a in accounts %}
+      <tr>
+        <td class="num">{{ a.code }}</td>
+        <td style="padding-inline-start:{{ (a.code|length - 1) * 8 }}px">{{ a.name_ar }}</td>
+        <td>{{ a.type.value }}</td>
+        <td>{{ "نعم" if a.is_postable else "لا (تجميعي)" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
