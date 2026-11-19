@@ -7,7 +7,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
 from app.models import Account, AccountType, Company, FiscalPeriod, JournalLine, Partner, PartnerKind, User
-from app.progress import ProgressError, certify_progress, create_project, project_summary
+from app.models import CollectionKind, PaymentMethod
+from app.progress import ProgressError, certificate_outstanding, certify_progress, collect_from_client, create_project, project_summary
 from app.security import hash_password
 
 
@@ -26,7 +27,7 @@ def db():
         s.add(FiscalPeriod(company_id=company.id, name="2026", start_date=date(2026, 1, 1), end_date=date(2026, 12, 31)))
         for code, acc_type in [
             ("1104", AccountType.ASSET), ("1106", AccountType.ASSET), ("4101", AccountType.REVENUE),
-            ("2104", AccountType.LIABILITY),
+            ("2104", AccountType.LIABILITY), ("1101", AccountType.ASSET), ("1102", AccountType.ASSET),
         ]:
             s.add(Account(company_id=company.id, code=code, name_ar=code, type=acc_type))
         s.add(Partner(company_id=company.id, kind=PartnerKind.CUSTOMER, name="مالك المشروع"))
@@ -135,3 +136,70 @@ def test_project_requires_customer_and_unique_code(db):
     with pytest.raises(ProgressError, match="موجود بالفعل"):
         create_project(db, company_id=db.info["company_id"], code="P-9", name="ب", client_id=client.id,
                        contract_value=Decimal("1000"), retention_rate=Decimal("5"))
+
+
+def _collect(db, project, kind, amount, cert=None, method=PaymentMethod.BANK):
+    result = collect_from_client(
+        db,
+        company_id=db.info["company_id"],
+        user_id=db.info["user_id"],
+        project_id=project.id,
+        kind=kind,
+        method=method,
+        collection_date=date(2026, 7, 1),
+        amount=Decimal(amount),
+        certificate_id=cert.id if cert else None,
+    )
+    db.commit()
+    return result
+
+
+def test_collecting_a_certificate_reduces_its_outstanding(db):
+    project = _project(db)
+    cert = _certify(db, project, "20000")  # due 22000
+    _collect(db, project, CollectionKind.CERTIFICATE, "15000", cert)
+    db.refresh(cert)
+    assert certificate_outstanding(db, cert) == Decimal("7000.00")
+
+
+def test_cannot_collect_more_than_certificate_outstanding(db):
+    project = _project(db)
+    cert = _certify(db, project, "20000")
+    _collect(db, project, CollectionKind.CERTIFICATE, "22000", cert)
+    with pytest.raises(ProgressError, match="أكبر من المتبقي"):
+        _collect(db, project, CollectionKind.CERTIFICATE, "1", cert)
+
+
+def test_certificate_collection_entry_debits_bank_and_credits_1104(db):
+    from app.models import JournalLine
+    project = _project(db)
+    cert = _certify(db, project, "20000")
+    collection = _collect(db, project, CollectionKind.CERTIFICATE, "5000", cert)
+    lines = db.scalars(select(JournalLine).where(JournalLine.entry_id == collection.journal_entry_id)).all()
+    by_code = {l.account.code: (l.debit, l.credit) for l in lines}
+    assert by_code == {"1102": (Decimal("5000.00"), Decimal("0")), "1104": (Decimal("0"), Decimal("5000.00"))}
+
+
+def test_retention_release_reduces_held_retention(db):
+    project = _project(db)
+    _certify(db, project, "20000")  # retention 1000
+    _collect(db, project, CollectionKind.RETENTION, "600", method=PaymentMethod.CASH)
+    assert project_summary(db, project).retention_held == Decimal("400.00")
+
+
+def test_cannot_release_more_retention_than_held(db):
+    project = _project(db)
+    _certify(db, project, "20000")
+    with pytest.raises(ProgressError, match="أكبر من المحتجز"):
+        _collect(db, project, CollectionKind.RETENTION, "1001")
+
+
+def test_collection_requires_certificate_of_same_project(db):
+    first = _project(db)
+    cert = _certify(db, first, "20000")
+    client = db.scalar(select(Partner).where(Partner.name == "مالك المشروع"))
+    other = create_project(db, company_id=db.info["company_id"], code="P-OTHER", name="آخر", client_id=client.id,
+                           contract_value=Decimal("5000"), retention_rate=Decimal("5"))
+    db.commit()
+    with pytest.raises(ProgressError, match="غير موجود في هذا المشروع"):
+        _collect(db, other, CollectionKind.CERTIFICATE, "100", cert)

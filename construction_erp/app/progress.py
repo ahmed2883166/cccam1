@@ -8,7 +8,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .accounting import LineInput, post_entry
-from .models import Account, Partner, PartnerKind, Project, ProgressCertificate
+from .models import (
+    Account,
+    CollectionKind,
+    Partner,
+    PartnerKind,
+    PaymentMethod,
+    Project,
+    ProgressCertificate,
+    ProjectCollection,
+)
 
 CENT = Decimal("0.01")
 HUNDRED = Decimal("100")
@@ -20,6 +29,7 @@ CODE_CERTIFIED = "1104"
 CODE_RETENTION = "1106"
 CODE_REVENUE = "4101"
 CODE_OUTPUT_VAT = "2104"
+CASH_CODE = {PaymentMethod.CASH: "1101", PaymentMethod.BANK: "1102"}
 
 
 class ProgressError(ValueError):
@@ -154,16 +164,108 @@ def certify_progress(
     return certificate
 
 
-def project_summary(session: Session, project: Project) -> ProjectSummary:
-    certified = _certified_cumulative(session, project)
-    retention = session.scalar(
+def _collected(session: Session, *, project_id: int, kind: CollectionKind, certificate_id: int | None = None) -> Decimal:
+    query = select(func.coalesce(func.sum(ProjectCollection.amount), 0)).where(
+        ProjectCollection.project_id == project_id, ProjectCollection.kind == kind
+    )
+    if certificate_id is not None:
+        query = query.where(ProjectCollection.certificate_id == certificate_id)
+    return Decimal(str(session.scalar(query)))
+
+
+def certificate_outstanding(session: Session, certificate: ProgressCertificate) -> Decimal:
+    """Amount still owed on a certificate (amount due minus cash collected against it)."""
+    collected = _collected(
+        session, project_id=certificate.project_id, kind=CollectionKind.CERTIFICATE, certificate_id=certificate.id
+    )
+    return (certificate.amount_due - collected).quantize(CENT)
+
+
+def retention_held(session: Session, project: Project) -> Decimal:
+    """Retention deducted on certificates and not yet released to the contractor."""
+    deducted = session.scalar(
         select(func.coalesce(func.sum(ProgressCertificate.retention), 0)).where(
             ProgressCertificate.project_id == project.id
         )
     )
+    released = _collected(session, project_id=project.id, kind=CollectionKind.RETENTION)
+    return Decimal(str(deducted)) - released
+
+
+def collect_from_client(
+    session: Session,
+    *,
+    company_id: int,
+    user_id: int,
+    project_id: int,
+    kind: CollectionKind,
+    method: PaymentMethod,
+    collection_date: date,
+    amount: Decimal,
+    certificate_id: int | None = None,
+) -> ProjectCollection:
+    """Record cash from the client: against a certificate (clears 1104) or as released retention (clears 1106)."""
+    project = session.scalar(select(Project).where(Project.id == project_id, Project.company_id == company_id))
+    if project is None:
+        raise ProgressError("المشروع غير موجود.")
+    if amount <= 0:
+        raise ProgressError("المبلغ لازم يكون أكبر من صفر.")
+
+    if kind == CollectionKind.CERTIFICATE:
+        if certificate_id is None:
+            raise ProgressError("اختار المستخلص اللي بيتحصّل منه.")
+        certificate = session.scalar(
+            select(ProgressCertificate).where(
+                ProgressCertificate.id == certificate_id,
+                ProgressCertificate.project_id == project.id,
+                ProgressCertificate.company_id == company_id,
+            )
+        )
+        if certificate is None:
+            raise ProgressError("المستخلص غير موجود في هذا المشروع.")
+        open_amount = certificate_outstanding(session, certificate)
+        if amount > open_amount:
+            raise ProgressError(f"المبلغ أكبر من المتبقي على المستخلص ({open_amount}).")
+        credit_code = CODE_CERTIFIED
+    else:
+        certificate_id = None
+        held = retention_held(session, project)
+        if amount > held:
+            raise ProgressError(f"المبلغ أكبر من المحتجز المتاح ({held}).")
+        credit_code = CODE_RETENTION
+
+    cash = _account(session, company_id, CASH_CODE[method])
+    credited = _account(session, company_id, credit_code)
+    entry = post_entry(
+        session,
+        company_id=company_id,
+        user_id=user_id,
+        entry_date=collection_date,
+        description=f"تحصيل من العميل - {project.code} ({'مستخلص' if kind == CollectionKind.CERTIFICATE else 'محتجز'})",
+        lines=[LineInput(cash.id, debit=amount), LineInput(credited.id, credit=amount)],
+    )
+    session.flush()
+
+    collection = ProjectCollection(
+        company_id=company_id,
+        project_id=project.id,
+        certificate_id=certificate_id,
+        kind=kind,
+        method=method,
+        collection_date=collection_date,
+        amount=amount,
+        journal_entry_id=entry.id,
+        created_by_id=user_id,
+    )
+    session.add(collection)
+    return collection
+
+
+def project_summary(session: Session, project: Project) -> ProjectSummary:
+    certified = _certified_cumulative(session, project)
     return ProjectSummary(
         contract_value=project.contract_value,
         certified_to_date=certified,
-        retention_held=Decimal(str(retention)),
+        retention_held=retention_held(session, project),
         remaining=project.contract_value - certified,
     )

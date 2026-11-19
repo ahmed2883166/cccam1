@@ -278,3 +278,26 @@ class ProgressCertificate(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     project: Mapped[Project] = relationship(back_populates="certificates")
+
+
+class CollectionKind(str, Enum):
+    CERTIFICATE = "certificate"  # cash for a certified amount (clears 1104)
+    RETENTION = "retention"  # release of held retention (clears 1106)
+
+
+class ProjectCollection(Base):
+    """Cash collected from a client against a certificate or as released retention."""
+
+    __tablename__ = "project_collections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    certificate_id: Mapped[int | None] = mapped_column(ForeignKey("progress_certificates.id"), nullable=True)
+    kind: Mapped[CollectionKind] = mapped_column(SAEnum(CollectionKind, native_enum=False, length=20))
+    method: Mapped[PaymentMethod] = mapped_column(SAEnum(PaymentMethod, native_enum=False, length=20))
+    collection_date: Mapped[date] = mapped_column(Date, index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"), nullable=True)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

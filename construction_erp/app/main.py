@@ -61,7 +61,15 @@ from .payments import (
     record_payment,
 )
 from .reports import AGING_BUCKETS, aging_report, aging_totals, vat_summary
-from .progress import ProgressError, certify_progress, create_project, project_summary
+from .models import CollectionKind
+from .progress import (
+    ProgressError,
+    certificate_outstanding,
+    certify_progress,
+    collect_from_client,
+    create_project,
+    project_summary,
+)
 from .security import verify_password
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -1038,7 +1046,8 @@ def project_detail(
         user=user,
         project=project,
         summary=project_summary(session, project),
-        certificates=certificates,
+        certificates=[(c, certificate_outstanding(session, c)) for c in certificates],
+        methods=[(m, label) for m, label in METHOD_LABELS_AR.items()],
         posted=posted,
         error=error,
         today=date.today().isoformat(),
@@ -1069,3 +1078,37 @@ async def project_certify(
         session.rollback()
         return RedirectResponse(f"/projects/{project_id}?error={quote(str(exc))}", status_code=303)
     return RedirectResponse(f"/projects/{project_id}?posted={certificate.number}", status_code=303)
+
+
+@app.post("/projects/{project_id}/collect")
+async def project_collect(
+    project_id: int,
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    form = await request.form()
+    try:
+        kind = _parse_kind(str(form.get("kind", "")), CollectionKind)
+        method = _parse_kind(str(form.get("method", "")), PaymentMethod)
+        collection_date = date.fromisoformat(str(form.get("collection_date", "")).strip())
+        amount = parse_decimal(str(form.get("amount", "")), "المبلغ")
+        raw_cert = str(form.get("certificate_id", "")).strip()
+        certificate_id = int(raw_cert) if raw_cert else None
+        collect_from_client(
+            session,
+            company_id=user.company_id,
+            user_id=user.id,
+            project_id=project_id,
+            kind=kind,
+            method=method,
+            collection_date=collection_date,
+            amount=amount,
+            certificate_id=certificate_id,
+        )
+        session.commit()
+    except (ProgressError, PostingError, InvoiceError, ValueError, HTTPException) as exc:
+        session.rollback()
+        message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        return RedirectResponse(f"/projects/{project_id}?error={quote(message)}", status_code=303)
+    return RedirectResponse(f"/projects/{project_id}?posted=collected", status_code=303)

@@ -5,13 +5,43 @@
 <p class="muted small">العميل: {{ project.client.name }} · نسبة المحتجز {{ "%g"|format(project.retention_rate) }}%</p>
 
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
-{% if posted %}<div class="card good">تم ترحيل المستخلص رقم {{ posted }}.</div>{% endif %}
+{% if posted == "collected" %}<div class="card good">تم تسجيل التحصيل.</div>
+{% elif posted %}<div class="card good">تم ترحيل المستخلص رقم {{ posted }}.</div>{% endif %}
 
 <div class="card form-grid">
   <div><div class="muted small">قيمة العقد</div><strong>{{ "{:,.2f}".format(summary.contract_value) }}</strong></div>
   <div><div class="muted small">المنجز المعتمد</div>{{ "{:,.2f}".format(summary.certified_to_date) }}</div>
   <div><div class="muted small">المحتجز لدى العميل</div>{{ "{:,.2f}".format(summary.retention_held) }}</div>
   <div><div class="muted small">المتبقي من العقد</div>{{ "{:,.2f}".format(summary.remaining) }}</div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h3 style="margin-top:0">تحصيل من العميل</h3>
+  <p class="muted small">تحصيل مستخلص يقفل المتبقي عليه (1104). وإطلاق المحتجز يقفل المحتجز المتاح (1106).</p>
+  <form method="post" action="/projects/{{ project.id }}/collect" class="form-grid">
+    <label>النوع
+      <select name="kind">
+        <option value="certificate">تحصيل مستخلص</option>
+        <option value="retention">إطلاق محتجز</option>
+      </select>
+    </label>
+    <label>المستخلص (للتحصيل فقط)
+      <select name="certificate_id">
+        <option value="">-</option>
+        {% for c, outstanding in certificates if outstanding > 0 %}
+        <option value="{{ c.id }}">مستخلص {{ c.number }} - متبقي {{ "{:,.2f}".format(outstanding) }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>الوسيلة
+      <select name="method">
+        {% for m, label in methods %}<option value="{{ m.value }}">{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>التاريخ <input type="date" name="collection_date" value="{{ today }}" required></label>
+    <label>المبلغ <input name="amount" inputmode="decimal" required></label>
+    <div><button>تسجيل التحصيل</button></div>
+  </form>
 </div>
 
 <div class="card" style="margin-top:16px">
@@ -27,9 +57,9 @@
 <div class="card" style="margin-top:16px;overflow-x:auto">
   <h3 style="margin-top:0">المستخلصات</h3>
   <table>
-    <thead><tr><th>الرقم</th><th>التاريخ</th><th class="num">التراكمي</th><th class="num">الصافي</th><th class="num">الضريبة</th><th class="num">المحتجز</th><th class="num">المستحق</th></tr></thead>
+    <thead><tr><th>الرقم</th><th>التاريخ</th><th class="num">التراكمي</th><th class="num">الصافي</th><th class="num">الضريبة</th><th class="num">المحتجز</th><th class="num">المستحق</th><th class="num">المتبقي</th></tr></thead>
     <tbody>
-    {% for c in certificates %}
+    {% for c, outstanding in certificates %}
       <tr>
         <td>{{ c.number }}</td>
         <td>{{ c.cert_date }}</td>
@@ -38,9 +68,10 @@
         <td class="num">{{ "{:,.2f}".format(c.tax) }}</td>
         <td class="num">{{ "{:,.2f}".format(c.retention) }}</td>
         <td class="num">{{ "{:,.2f}".format(c.amount_due) }}</td>
+        <td class="num">{{ "{:,.2f}".format(outstanding) }}</td>
       </tr>
     {% else %}
-      <tr><td colspan="7" class="muted">لا توجد مستخلصات بعد.</td></tr>
+      <tr><td colspan="8" class="muted">لا توجد مستخلصات بعد.</td></tr>
     {% endfor %}
     </tbody>
   </table>
