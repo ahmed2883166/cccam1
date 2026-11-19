@@ -43,6 +43,7 @@ docker compose up -d --build
 ولإنشاء الشركة ودليل الحسابات والمستخدم الأولي (لازم تمرر كلمة المرور):
 
 ```bash
+docker compose exec web alembic upgrade head
 docker compose exec -e CERP_ADMIN_PASSWORD='كلمة-مرور-قوية' web python -m app.seed
 ```
 
@@ -54,6 +55,7 @@ docker compose exec -e CERP_ADMIN_PASSWORD='كلمة-مرور-قوية' web pyth
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export CERP_DATABASE_URL="sqlite:///./dev.db"   # للتجربة السريعة فقط
+alembic upgrade head                 # إنشاء الجداول بالهجرات
 export CERP_ADMIN_PASSWORD='كلمة-مرور-قوية'
 python -m app.seed
 uvicorn app.main:app --reload
