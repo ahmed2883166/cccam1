@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}سجل القيود{% endblock %}
+{% block content %}
+<h2>سجل القيود اليومية</h2>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<form method="get" action="/journal/entries" class="filters" style="margin-bottom:12px">
+  <label>من <input type="date" name="start" value="{{ start }}"></label>
+  <label>إلى <input type="date" name="end" value="{{ end }}"></label>
+  <label>الحساب
+    <select name="account_id">
+      <option value="">كل الحسابات</option>
+      {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if account_id == a.id }}>{{ a.code }} - {{ a.name_ar }}</option>{% endfor %}
+    </select>
+  </label>
+  <button>عرض</button>
+</form>
+
+<div class="card" style="overflow-x:auto">
+  <table>
+    <thead><tr><th class="num">رقم القيد</th><th>التاريخ</th><th>البيان</th><th class="num">المدين</th><th class="num">الدائن</th></tr></thead>
+    <tbody>
+    {% for e, debit, credit in entries %}
+      <tr>
+        <td class="num"><a href="/journal/entries/{{ e.id }}">{{ e.number }}</a></td>
+        <td>{{ e.entry_date }}</td>
+        <td>{{ e.description }}</td>
+        <td class="num">{{ "{:,.2f}".format(debit) }}</td>
+        <td class="num">{{ "{:,.2f}".format(credit) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">لا توجد قيود في الفترة المحددة.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

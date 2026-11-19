@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}قيد {{ entry.number }}{% endblock %}
+{% block content %}
+<h2>قيد رقم {{ entry.number }}</h2>
+<div class="card form-grid">
+  <div><div class="muted small">التاريخ</div>{{ entry.entry_date }}</div>
+  <div><div class="muted small">البيان</div>{{ entry.description }}</div>
+</div>
+
+<div class="card" style="overflow-x:auto;margin-top:16px">
+  <table>
+    <thead><tr><th>الحساب</th><th>البيان التفصيلي</th><th class="num">مدين</th><th class="num">دائن</th></tr></thead>
+    <tbody>
+    {% for l in entry.lines %}
+      <tr>
+        <td>{{ l.account.code }} - {{ l.account.name_ar }}</td>
+        <td>{{ l.memo or "" }}</td>
+        <td class="num">{{ "{:,.2f}".format(l.debit) if l.debit else "" }}</td>
+        <td class="num">{{ "{:,.2f}".format(l.credit) if l.credit else "" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr><th colspan="2">الإجمالي</th><th class="num">{{ "{:,.2f}".format(total_debit) }}</th><th class="num">{{ "{:,.2f}".format(total_credit) }}</th></tr>
+    </tfoot>
+  </table>
+</div>
+<a href="/journal/entries" style="display:inline-block;margin-top:12px">رجوع لسجل القيود</a>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}دفتر الأستاذ{% endblock %}
+{% block content %}
+<h2>دفتر الأستاذ</h2>
+<form method="get" action="/ledger" class="filters" style="margin-bottom:12px">
+  <label>الحساب
+    <select name="account_id" required>
+      <option value="">اختر حسابًا</option>
+      {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if selected == a.id|string }}>{{ a.code }} - {{ a.name_ar }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>من <input type="date" name="start" value="{{ start }}"></label>
+  <label>إلى <input type="date" name="end" value="{{ end }}"></label>
+  <button>عرض</button>
+</form>
+
+{% if ledger %}
+<div class="card" style="overflow-x:auto">
+  <h3 style="margin-top:0">{{ ledger.account.code }} - {{ ledger.account.name_ar }}</h3>
+  <table>
+    <thead><tr><th>التاريخ</th><th class="num">القيد</th><th>البيان</th><th class="num">مدين</th><th class="num">دائن</th><th class="num">الرصيد</th></tr></thead>
+    <tbody>
+      <tr><td colspan="5" class="muted">رصيد أول المدة</td><td class="num">{{ "{:,.2f}".format(ledger.opening) }}</td></tr>
+    {% for r in ledger.rows %}
+      <tr>
+        <td>{{ r.entry_date }}</td>
+        <td class="num"><a href="/journal/entries/{{ r.entry_id }}">{{ r.entry_number }}</a></td>
+        <td>{{ r.memo or r.description }}</td>
+        <td class="num">{{ "{:,.2f}".format(r.debit) if r.debit else "" }}</td>
+        <td class="num">{{ "{:,.2f}".format(r.credit) if r.credit else "" }}</td>
+        <td class="num">{{ "{:,.2f}".format(r.balance) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">لا توجد حركات في الفترة.</td></tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr><th colspan="3">الإجمالي والرصيد الختامي</th><th class="num">{{ "{:,.2f}".format(ledger.total_debit) }}</th><th class="num">{{ "{:,.2f}".format(ledger.total_credit) }}</th><th class="num">{{ "{:,.2f}".format(ledger.closing) }}</th></tr>
+    </tfoot>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

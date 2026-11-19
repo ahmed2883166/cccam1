@@ -63,6 +63,7 @@ from .payments import (
 from .reports import AGING_BUCKETS, aging_report, aging_totals, vat_summary
 from .models import CollectionKind
 from .dashboard import compute_kpis
+from .ledger import account_ledger, entry_totals, list_entries
 from .statements import financial_position, income_statement
 from .progress import (
     ProgressError,
@@ -1146,4 +1147,86 @@ def statements_page(
         as_of=as_of_d.isoformat(),
         start=start_d.isoformat(),
         error=error,
+    )
+
+
+@app.get("/journal/entries", response_class=HTMLResponse)
+def journal_entries_list(
+    request: Request,
+    start: str = Query(""),
+    end: str = Query(""),
+    account_id: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    today = date.today()
+    error = ""
+    try:
+        start_d = date.fromisoformat(start) if start else date(today.year, 1, 1)
+        end_d = date.fromisoformat(end) if end else today
+    except ValueError:
+        start_d, end_d = date(today.year, 1, 1), today
+        error = "صيغة التاريخ غير صحيحة."
+    account_pk = int(account_id) if account_id.isdigit() else None
+    entries = list_entries(session, user.company_id, start_d, end_d, account_id=account_pk)
+    accounts_list = session.scalars(
+        select(Account).where(Account.company_id == user.company_id).order_by(Account.code)
+    ).all()
+    return _render(
+        request,
+        "journal_entries.html",
+        user=user,
+        entries=[(e, *entry_totals(e)) for e in entries],
+        accounts=accounts_list,
+        start=start_d.isoformat(),
+        end=end_d.isoformat(),
+        account_id=account_pk,
+        error=error,
+    )
+
+
+@app.get("/journal/entries/{entry_id}", response_class=HTMLResponse)
+def journal_entry_detail(
+    entry_id: int,
+    request: Request,
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    entry = session.scalar(select(JournalEntry).where(JournalEntry.id == entry_id, JournalEntry.company_id == user.company_id))
+    if entry is None:
+        raise HTTPException(status_code=404, detail="القيد غير موجود.")
+    debit, credit = entry_totals(entry)
+    return _render(request, "journal_entry_detail.html", user=user, entry=entry, total_debit=debit, total_credit=credit)
+
+
+@app.get("/ledger", response_class=HTMLResponse)
+def ledger_page(
+    request: Request,
+    account_id: str = Query(""),
+    start: str = Query(""),
+    end: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    today = date.today()
+    accounts_list = session.scalars(
+        select(Account).where(Account.company_id == user.company_id).order_by(Account.code)
+    ).all()
+    try:
+        start_d = date.fromisoformat(start) if start else date(today.year, 1, 1)
+        end_d = date.fromisoformat(end) if end else today
+    except ValueError:
+        start_d, end_d = date(today.year, 1, 1), today
+    ledger = None
+    if account_id.isdigit():
+        ledger = account_ledger(session, user.company_id, int(account_id), start_d, end_d)
+    return _render(
+        request,
+        "ledger.html",
+        user=user,
+        accounts=accounts_list,
+        ledger=ledger,
+        selected=account_id,
+        start=start_d.isoformat(),
+        end=end_d.isoformat(),
     )
