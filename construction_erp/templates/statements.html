@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}القوائم المالية{% endblock %}
+{% block content %}
+<h2>القوائم المالية</h2>
+<form method="get" action="/statements" class="filters" style="margin-bottom:12px">
+  <label>من تاريخ <input type="date" name="start" value="{{ start }}" required></label>
+  <label>حتى تاريخ <input type="date" name="as_of" value="{{ as_of }}" required></label>
+  <button>عرض</button>
+</form>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<div class="card" style="overflow-x:auto">
+  <h3 style="margin-top:0">قائمة المركز المالي في {{ as_of }}</h3>
+  <table>
+    <tbody>
+      <tr><th colspan="3">الأصول</th></tr>
+      {% for l in position.assets %}<tr><td>{{ l.code }}</td><td>{{ l.name }}</td><td class="num">{{ "{:,.2f}".format(l.amount) }}</td></tr>{% endfor %}
+      <tr><th colspan="2">إجمالي الأصول</th><th class="num">{{ "{:,.2f}".format(position.total_assets) }}</th></tr>
+      <tr><th colspan="3">الالتزامات</th></tr>
+      {% for l in position.liabilities %}<tr><td>{{ l.code }}</td><td>{{ l.name }}</td><td class="num">{{ "{:,.2f}".format(l.amount) }}</td></tr>{% endfor %}
+      <tr><th colspan="2">إجمالي الالتزامات</th><th class="num">{{ "{:,.2f}".format(position.total_liabilities) }}</th></tr>
+      <tr><th colspan="3">حقوق الملكية</th></tr>
+      {% for l in position.equity %}<tr><td>{{ l.code }}</td><td>{{ l.name }}</td><td class="num">{{ "{:,.2f}".format(l.amount) }}</td></tr>{% endfor %}
+      <tr><td></td><td>أرباح (خسائر) مرحّلة من الأنشطة حتى التاريخ</td><td class="num">{{ "{:,.2f}".format(position.profit_to_date) }}</td></tr>
+      <tr><th colspan="2">إجمالي حقوق الملكية</th><th class="num">{{ "{:,.2f}".format(position.total_equity) }}</th></tr>
+    </tbody>
+  </table>
+  {% if position.difference == 0 %}
+    <p class="badge good">القائمة متوازنة: الأصول = الالتزامات + حقوق الملكية</p>
+  {% else %}
+    <p class="error">القائمة غير متوازنة بفرق {{ "{:,.2f}".format(position.difference) }}. راجع القيود.</p>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:16px;overflow-x:auto">
+  <h3 style="margin-top:0">قائمة الدخل من {{ start }} إلى {{ as_of }}</h3>
+  <table>
+    <tbody>
+      <tr><th colspan="3">الإيرادات</th></tr>
+      {% for l in income.revenue %}<tr><td>{{ l.code }}</td><td>{{ l.name }}</td><td class="num">{{ "{:,.2f}".format(l.amount) }}</td></tr>{% endfor %}
+      <tr><th colspan="2">إجمالي الإيرادات</th><th class="num">{{ "{:,.2f}".format(income.total_revenue) }}</th></tr>
+      <tr><th colspan="3">المصروفات</th></tr>
+      {% for l in income.expenses %}<tr><td>{{ l.code }}</td><td>{{ l.name }}</td><td class="num">{{ "{:,.2f}".format(l.amount) }}</td></tr>{% endfor %}
+      <tr><th colspan="2">إجمالي المصروفات</th><th class="num">{{ "{:,.2f}".format(income.total_expenses) }}</th></tr>
+      <tr><th colspan="2">صافي الربح (الخسارة)</th><th class="num">{{ "{:,.2f}".format(income.net_profit) }}</th></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

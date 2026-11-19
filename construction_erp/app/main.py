@@ -62,6 +62,7 @@ from .payments import (
 )
 from .reports import AGING_BUCKETS, aging_report, aging_totals, vat_summary
 from .models import CollectionKind
+from .statements import financial_position, income_statement
 from .progress import (
     ProgressError,
     certificate_outstanding,
@@ -1112,3 +1113,35 @@ async def project_collect(
         message = exc.detail if isinstance(exc, HTTPException) else str(exc)
         return RedirectResponse(f"/projects/{project_id}?error={quote(message)}", status_code=303)
     return RedirectResponse(f"/projects/{project_id}?posted=collected", status_code=303)
+
+
+@app.get("/statements", response_class=HTMLResponse)
+def statements_page(
+    request: Request,
+    as_of: str = Query(""),
+    start: str = Query(""),
+    user: User = Depends(require_user),
+    session: Session = Depends(get_session),
+):
+    today = date.today()
+    error = ""
+    try:
+        as_of_d = date.fromisoformat(as_of) if as_of else today
+        start_d = date.fromisoformat(start) if start else date(as_of_d.year, 1, 1)
+    except ValueError:
+        as_of_d, start_d = today, date(today.year, 1, 1)
+        error = "صيغة التاريخ غير صحيحة."
+    if start_d > as_of_d:
+        error = "تاريخ بداية الفترة بعد تاريخ القائمة."
+    position = financial_position(session, user.company_id, as_of_d)
+    income = income_statement(session, user.company_id, start_d, as_of_d)
+    return _render(
+        request,
+        "statements.html",
+        user=user,
+        position=position,
+        income=income,
+        as_of=as_of_d.isoformat(),
+        start=start_d.isoformat(),
+        error=error,
+    )
