@@ -15,5 +15,22 @@
     {% endif %}
   </div>
 </div>
-<p class="muted">المؤشرات الأوسع (المشروعات، المستخلصات، التدفقات) تأتي في المراحل التالية.</p>
+<h3>المركز النقدي والمديونيات</h3>
+<div class="grid">
+  <div class="card"><div class="muted">النقدية والبنك</div><div class="kpi num">{{ "{:,.2f}".format(k.cash_and_bank) }}</div></div>
+  <div class="card"><div class="muted">مستحق من العملاء</div><div class="kpi num">{{ "{:,.2f}".format(k.receivables) }}</div></div>
+  <div class="card"><div class="muted">مستحق للموردين</div><div class="kpi num">{{ "{:,.2f}".format(k.payables) }}</div></div>
+  <div class="card"><div class="muted">متأخر أكتر من 60 يوم</div><div class="kpi num {{ 'bad' if k.overdue_receivables > 0 }}">{{ "{:,.2f}".format(k.overdue_receivables) }}</div></div>
+</div>
+
+<h3>المشروعات والضريبة والربحية</h3>
+<div class="grid">
+  <div class="card"><div class="muted">محتجزات لدى العملاء</div><div class="kpi num">{{ "{:,.2f}".format(k.retention_receivable) }}</div></div>
+  <div class="card"><div class="muted">دفعات مقدمة من العملاء</div><div class="kpi num">{{ "{:,.2f}".format(k.customer_advances) }}</div></div>
+  <div class="card"><div class="muted">دفعات مقدمة للموردين</div><div class="kpi num">{{ "{:,.2f}".format(k.supplier_advances) }}</div></div>
+  <div class="card"><div class="muted">صافي الضريبة هذا الشهر</div><div class="kpi num">{{ "{:,.2f}".format(k.vat_net_month) }}</div></div>
+  <div class="card"><div class="muted">صافي الربح منذ بداية السنة</div><div class="kpi num">{{ "{:,.2f}".format(k.profit_ytd) }}</div></div>
+  <div class="card"><div class="muted">مشروعات نشطة / المتبقي من العقود</div><div class="kpi num">{{ k.active_projects }} / {{ "{:,.2f}".format(k.remaining_contract_value) }}</div></div>
+</div>
+<p class="muted small">الأرقام محسوبة من القيود المرحّلة لحد النهارده.</p>
 {% endblock %}

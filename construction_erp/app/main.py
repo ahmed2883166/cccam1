@@ -62,6 +62,7 @@ from .payments import (
 )
 from .reports import AGING_BUCKETS, aging_report, aging_totals, vat_summary
 from .models import CollectionKind
+from .dashboard import compute_kpis
 from .statements import financial_position, income_statement
 from .progress import (
     ProgressError,
@@ -162,6 +163,7 @@ def dashboard(request: Request, user: User = Depends(require_user), session: Ses
         total_debit=totals[0],
         total_credit=totals[1],
         account_count=account_count,
+        k=compute_kpis(session, user.company_id, date.today()),
     )
 
 
